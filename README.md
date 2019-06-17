@@ -102,6 +102,7 @@ The general method for data collection goes like this:
 - Also be sure to dump some special object names called `Default__<Classname>`
   (that's with two underscores inbetween).  There'll be one for each class
   in the game, and some modders find those objects useful.
+  - Do not attempt to dump `Default__Class` - the engine freaks out and crashes.
 - Restrict the number of `obj dump` commands sent by each `exec` statement,
   to avoid engine crashing problems.  Since some object types will generate
   longer dumps than others, this could theoretically be fairly intelligently
