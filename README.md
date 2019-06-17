@@ -22,7 +22,7 @@ Method
 
 The general method for data collection goes like this:
 
-- Generate a list of objects to dump, part 1:
+1. Generate a list of objects to dump, part 1:
   - Open each level and do a `getall <ClassName> Name` for each Class
     in the game, to get a list of all objects in each level.
     - Note that a `getall Object Name` would theoretically return all
@@ -45,7 +45,7 @@ The general method for data collection goes like this:
       logfile by doing an `obj dump switch.to.mainmenu`
   - Quit the game and save `Launch.log` where it can be found later.  The
     file should be about 5.7GB (as of mid-June, 2019).
-- Generate a list of objects to dump, part 2
+2. Generate a list of objects to dump, part 2
   - Many objects are dynamically named and can't actually be used in
     traditional mods, since the object names will change each time a
     map is loaded.
@@ -61,7 +61,7 @@ The general method for data collection goes like this:
     load vehicle/character data in a different order as well.
   - Quit the game, and save *this* `Launch.log` file alongside the original
     one.
-- Compare the two data dumps
+3. Compare the two data dumps
   - It's *possible* at this point that some of the transient data might
     by pure chance end up with the same name while in the same level, but
     it's supremely unlikely.
@@ -69,7 +69,7 @@ The general method for data collection goes like this:
     command 'obj dump switch.to.foo'` markers to differentiate what stage
     of the dump you're in, and generate a list of objects per map/whatever
     which only contains objects found in both dumps.
-- Generate a list of objects to dump in each level
+4. Generate a list of objects to dump in each level
   - Using the combined object list above, generate a "condensed" list of
     objects to dump, while looping through levels in-game again.  There
     are a lot of objects which will be active on every single level, so
@@ -87,7 +87,7 @@ The general method for data collection goes like this:
     - `GBXNavMesh`
     - `SwfMovie`
     - `Terrain`
-- Then, use that list of objects to dump to actually loop through and
+5. Then, use that list of objects to dump to actually loop through and
   dump objects.  Remember that there's a step to load characters/vehicles,
   and heading out to the main menu, as well!
   - Also be sure to dump some special object names called `Default__<Classname>`
@@ -99,11 +99,11 @@ The general method for data collection goes like this:
     dealt-with, to condense the number of `exec`s that have to be done, but
     what I've done is restrict it to 800 `obj dump` statements at once, which
     seems to be sufficient to dump the whole game.
-- Filter out any sensitive data
+6. Filter out any sensitive data
   - This still needs filling in, but a few objects can apparently contain
     information like your local system username and the like.  Still need to
     figure out what objects those are, and the best way to sanitize them.
-- Convert to BLCMM Format
+7. Convert to BLCMM Format
 
 Status / HOWTO
 --------------
