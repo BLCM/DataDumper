@@ -24,85 +24,85 @@ The general method for data collection goes like this:
 
 ### 1. Generate a list of objects to dump, part 1:
 
-* Open each level and do a `getall <ClassName> Name` for each Class
+- Open each level and do a `getall <ClassName> Name` for each Class
   in the game, to get a list of all objects in each level.
-  * Note that a `getall Object Name` would theoretically return all
+  - Note that a `getall Object Name` would theoretically return all
     the objects as well, but without extra hacking, Borderlands 2 will
     crash beacuse of too much output, so we're doing it by class,
     instead.  Likewise, `getall Field Name` would crash as well, so
     skip that one too.
-  * Prior to each level dump, generate an easily-recognizable line in
+  - Prior to each level dump, generate an easily-recognizable line in
     the logfile by doing an `obj dump switch.to.LevelName_P`
-* Load in all character and vehicle packages, then do the same `getall`
+- Load in all character and vehicle packages, then do the same `getall`
   loop to get those object names
-  * Prior to this section, generate an easily-recognizable line in the
+  - Prior to this section, generate an easily-recognizable line in the
     logfile by doing an `obj dump switch.to.charvehicle`
-* Finally, return to the main menu to do a further set of `getall`.
-  * Getting dumps from the main menu is very unlikely to be helpful
+- Finally, return to the main menu to do a further set of `getall`.
+  - Getting dumps from the main menu is very unlikely to be helpful
     for anything, but it's included for completeness' sake.
-  * We do the main menu last, because we want object data after hotfixes
+  - We do the main menu last, because we want object data after hotfixes
     and other engine changes have been applied.
-  * Prior to this section, generate an easily-recognizable line in the
+  - Prior to this section, generate an easily-recognizable line in the
     logfile by doing an `obj dump switch.to.mainmenu`
-* Quit the game and save `Launch.log` where it can be found later.  The
+- Quit the game and save `Launch.log` where it can be found later.  The
   file should be about 5.7GB (as of mid-June, 2019).
 
 ### 2. Generate a list of objects to dump, part 2
 
-* Many objects are dynamically named and can't actually be used in
+- Many objects are dynamically named and can't actually be used in
   traditional mods, since the object names will change each time a
   map is loaded.
-* Knowing which objects are like that is a bit tricky - in the engine
+- Knowing which objects are like that is a bit tricky - in the engine
   itself, it's attributes labelled with `transient` which get the
   dynamic names, but attempting to use that information leads to a
   lot of processing that we'd have to do.
-  * We *could* also just build up a list of places in the object
+  - We *could* also just build up a list of places in the object
     tree manually, and exlude from that, but likewise, it's a lot of
     work.
-* So, what we do is just repeat our previous data-collection loop, but
+- So, what we do is just repeat our previous data-collection loop, but
   just to be sure, we loop through levels in a different order, and
   load vehicle/character data in a different order as well.
-* Quit the game, and save *this* `Launch.log` file alongside the original
+- Quit the game, and save *this* `Launch.log` file alongside the original
   one.
 
 ### 3. Compare the two data dumps
 
-* It's *possible* at this point that some of the transient data might
+- It's *possible* at this point that some of the transient data might
   by pure chance end up with the same name while in the same level, but
   it's supremely unlikely.
-* So, loop through each `Launch.log`, using the `No objects found using
+- So, loop through each `Launch.log`, using the `No objects found using
   command 'obj dump switch.to.foo'` markers to differentiate what stage
   of the dump you're in, and generate a list of objects per map/whatever
   which only contains objects found in both dumps.
 
 ### 4. Generate a list of objects to dump in each level
 
-* Using the combined object list above, generate a "condensed" list of
+- Using the combined object list above, generate a "condensed" list of
   objects to dump, while looping through levels in-game again.  There
   are a lot of objects which will be active on every single level, so
   there's no point dumping the stock item pools for each level, for
   instance.
-* This should be easily-generatable using the condensed list: simply
+- This should be easily-generatable using the condensed list: simply
   remember which objects you've seen before, and only set up dump commands
   when you've gotten to a new object.
-* There are some class types which generate extremely long `obj dump`
+- There are some class types which generate extremely long `obj dump`
   outputs, which can lead to crashing the game similar to `getall Object Name`
   from above.  Rather than try to work around this, we're going to just
   exclude these classes from the dumps.  These have not historically been
   part of the BLCMM OE dataset anyway, so shouldn't be missed:
-  * `AnimSequence`
-  * `GBXNavMesh`
-  * `SwfMovie`
-  * `Terrain`
+  - `AnimSequence`
+  - `GBXNavMesh`
+  - `SwfMovie`
+  - `Terrain`
 
-### 5. Then, use that list of objects to dump to actually loop through and
+### 5. Then, use that list of objects to dump to actually loop through and dump objects.
 
-dump objects.  Remember that there's a step to load characters/vehicles,
-and heading out to the main menu, as well!
-* Also be sure to dump some special object names called `Default__<Classname>`
+- Remember that there's a step to load characters/vehicles,
+  and heading out to the main menu, as well!
+- Also be sure to dump some special object names called `Default__<Classname>`
   (that's with two underscores inbetween).  There'll be one for each class
   in the game, and some modders find those objects useful.
-* Restrict the number of `obj dump` commands sent by each `exec` statement,
+- Restrict the number of `obj dump` commands sent by each `exec` statement,
   to avoid engine crashing problems.  Since some object types will generate
   longer dumps than others, this could theoretically be fairly intelligently
   dealt-with, to condense the number of `exec`s that have to be done, but
@@ -111,7 +111,7 @@ and heading out to the main menu, as well!
 
 ### 6. Filter out any sensitive data
 
-* This still needs filling in, but a few objects can apparently contain
+- This still needs filling in, but a few objects can apparently contain
   information like your local system username and the like.  Still need to
   figure out what objects those are, and the best way to sanitize them.
 
