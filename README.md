@@ -45,7 +45,8 @@ The general method for data collection goes like this:
   - Prior to this section, generate an easily-recognizable line in the
     logfile by doing an `obj dump switch.to.mainmenu`
 - Quit the game and save `Launch.log` where it can be found later.  The
-  file should be about 5.7GB (as of mid-June, 2019).
+  file should be about 5.7GB (as of mid-June, 2019), and on my PC took
+  a little under two hours to complete.
 
 ### 2. Generate a list of objects to dump, part 2
 
@@ -109,6 +110,8 @@ The general method for data collection goes like this:
   dealt-with, to condense the number of `exec`s that have to be done, but
   what I've done is restrict it to 800 `obj dump` statements at once, which
   seems to be sufficient to dump the whole game.
+- This should generate a dump file that's a little over 6GB (as of mid June, 2019),
+  and on my PC took a little under 90 minutes to complete.
 
 ### 6. Filter out any sensitive data
 
@@ -133,7 +136,9 @@ After activating it in PythonSDK's mod interface, hit "continue" on a character
 to load into a level.  I recommend using a level 80 char running on Normal,
 just in case you end up spawning into a group of enemies or something (this is
 rare, but can happen in the Dust, for instance, if you happened to enter there
-from Lynchwood).
+from Lynchwood).  Also make sure that the character you're using has been
+through *all* game content, to prevent any automatic cutscene loading or the
+like.
 
 Once ingame, you can use the `O`/`o` key to cycle through modes.  By default
 it starts with "forward" `getall` loading -- ie: the first step of the above
