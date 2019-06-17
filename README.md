@@ -145,7 +145,11 @@ it starts with "forward" `getall` loading -- ie: the first step of the above
 procedure.  Hitting `o` once will switch to "reverse" `getall` loading -- ie:
 the second step of the above procedure.  Once more will put it into data
 dumping mode, which requires that you've set up the data files outside of
-the game.  (Hitting `o` again will cycle back to the first mode.)
+the game.  A fourth mode will let you *just* do `obj dump` statements for
+characters/vehicles, in case that fails on the global run -- it seems that
+it's possible to be hit with garbage collection and have some of those
+dumps not work, so check on that when you're done.  Hitting `o` again will
+cycle back to the first mode.
 
 Hit `B`/`b` to start running the dumps.  You'll get ingame chat messages to
 let you know what it's doing, and will automatically exit the game once
@@ -187,3 +191,10 @@ This hasn't been started yet!
 ### Convert dumps to BLCMM format
 
 This hasn't been started yet!
+
+License
+-------
+
+This code is licensed under the
+[GPLv3 or later](https://www.gnu.org/licenses/quick-guide-gplv3.html).
+See [COPYING.txt](COPYING.txt) for the full text of the license.

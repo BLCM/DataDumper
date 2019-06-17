@@ -1,6 +1,24 @@
 #!/usr/bin/env python
 # vim: set expandtab tabstop=4 shiftwidth=4:
 
+# Copyright 2019 Christopher J. Kucera
+# <cj@apocalyptech.com>
+# <http://apocalyptech.com/contact.php>
+#
+# This program is free software: you can redistribute it
+# and/or modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
+#
+# Borderlands ModCabinet Sorter is distributed in the hope that it will
+# be useful, but WITHOUT ANY WARRANTY; without even the implied
+# warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with Borderlands ModCabinet Sorter.  If not, see
+# <https://www.gnu.org/licenses/>.
+
 import os
 import math
 import random
@@ -45,12 +63,14 @@ class DataDumper(bl2sdk.BL2MOD):
     (MODE_FWD,
             MODE_REV,
             MODE_DUMP,
-            ) = range(3)
+            MODE_DUMP_CHARVEHICLE,
+            ) = range(4)
 
     MODE_ENG = {
             MODE_FWD: ('Maps Forward', None),
             MODE_REV: ('Maps Reverse', None),
             MODE_DUMP: ('Dump Data', None),
+            MODE_DUMP_CHARVEHICLE: ('Dump Character/Vehicle Data Only', None),
             }
 
     level_list = [
@@ -440,6 +460,18 @@ class DataDumper(bl2sdk.BL2MOD):
             self.add_dumps('charvehicle')
             self.add_main_menu()
             self.add_dumps('mainmenu')
+            self.add_exit()
+
+        elif self.cur_mode == self.MODE_DUMP_CHARVEHICLE:
+
+            # Special mode to *just* do characters/vehicles.  On my
+            # first runthrough of MODE_DUMP, only the first charvehicle
+            # `exec` returned data - beyond that it was all "No objects found."
+            # Possibly I'd just gotten unlucky with GC, or it could potentially
+            # be systemic.  Regardless, it works just fine if it's the *only*
+            # thing you do, so here it is.
+            self.add_chars_vehicles()
+            self.add_dumps('charvehicle')
             self.add_exit()
 
         else:
