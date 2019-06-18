@@ -72,6 +72,7 @@ with open(dump_file, 'r', encoding='latin1') as df:
                 cur_name = None
                 cur_fh = None
             else:
+                seen_objects.add(cur_name)
                 if cur_type not in filehandles:
                     filehandles[cur_type] = open(os.path.join(output_dir, '{}.dump'.format(cur_type)), 'w', encoding='latin1')
                 cur_fh = filehandles[cur_type]

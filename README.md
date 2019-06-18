@@ -238,7 +238,10 @@ small number of edits.
 
 ### Convert dumps to BLCMM format
 
-This hasn't been started yet!
+This is done via a `generate_blcmm_data.py` script, inside the `scripts`
+directory.  It expects to be run in the same directory that `categorize_data.py`
+was run, so it's got that `categorized` directory to work with.  It will
+output the Jars into `generated_blcmm_data`.
 
 License
 -------
