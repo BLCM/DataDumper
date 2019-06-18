@@ -164,12 +164,12 @@ course, simply quit the game manually instead of cancelling.)
 
 ### Generating objects to dump (steps 3 and 4, above)
 
-These steps are handled via a single Python 3 script, which you can find in
-the `scripts` directory.  This is a command-line utility, so you'll have
-to install Python, and then run it from a commandline (for Windows users
-that means either `cmd.exe` or Powershell, usually).  Make sure when installing
-Python to check the box which adds Python to your system `PATH`, so it
-can be executed properly.
+These steps are handled via a single Python 3 script named
+`generate_obj_dump_lists.py`, which you can find in the `scripts` directory.
+This is a command-line utility, so you'll have to install Python, and then run
+it from a commandline (for Windows users that means either `cmd.exe` or
+Powershell, usually).  Make sure when installing Python to check the box which
+adds Python to your system `PATH`, so it can be executed properly.
 
 Running on Windows would look something like:
 
@@ -184,29 +184,57 @@ which the DataDumper PythonSDK mod can use (in its "data dump" mode) to
 actually dump data.  So head back in to Borderlands, enable the mod, change
 to that mode, and start it up again!
 
+**NOTE:** In the event that your vehicle/character dumps fail during
+the dump, you'll need to head back in to Borderlands, flip the Data Dumper
+mod to its fourth mode (vehicle/char dumps) and run it.  This will result
+in having one huge `Launch.log` file with nearly everything it, and a
+small one with just the vehicle/character data in it.  You'll want to
+merge the vehicle/char data back into the big file, replacing the old
+segment which started with `obj dump switch.to.charvehicle`.  I wrote
+a little Python script to do it for me, which is `combine_vehiclechar.py`
+(in the `scripts` dir).  This is undocumented and pretty bare; you'll
+need to edit it to change file paths at the very least.
+
+### Prep the data for tweaking and conversion
+
+This isn't a step listed above, but I have a script which pulls all the
+dumps out of `Launch.log` and saves them into about 3,500 individual
+files, with filenames of `ClassName.dump` (inside a `categorized`
+directory).  The script is called `categorize_data.py`, inside the
+`scripts` folder here.
+
+Like the other scripts here, it's somewhat rough, and requires some
+editing of file paths right in the script itself.  Will attempt to
+fix that up a bit later.
+
 ### Filter out sensitive data
 
-This is not actually integrated with anything yet, but here are the
-locations where personal information seems to be stored.  This may not be
-exhaustive -- these are just the locations I've found so far.
+Here are the locations where personal information seems to be stored.
+This may not be exhaustive -- these are just the locations I've found so far.
 
 - Your hostname can be found in:
-  - `Loader.TheWorld:PersistentLevel.WorldInfo_1`
+  - `WorldInfo'Loader.TheWorld:PersistentLevel.WorldInfo_1'`
 - Your Steam username can be found in:
-  - `Loader.TheWorld:PersistentLevel.WillowPlayerReplicationInfo_44`
-  - `Transient.OnlineSubsystemSteamworks_0`
-  - `Transient.DataStoreClient_0:UIDataStore_OnlinePlayerData_42`
-  - `Transient.WillowGameEngine_0:WillowGameViewportClient_0`
-  - `Transient.WillowOnlineGameSettings_0`
+  - `WillowPlayerReplicationInfo'Loader.TheWorld:PersistentLevel.WillowPlayerReplicationInfo_44'`
+  - `OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'`
+  - `UIDataStore_OnlinePlayerData'Transient.DataStoreClient_0:UIDataStore_OnlinePlayerData_42'`
+  - `WillowGameViewportClient'Transient.WillowGameEngine_0:WillowGameViewportClient_0'`
+  - `WillowOnlineGameSettings'Transient.WillowOnlineGameSettings_0'`
 - Your 17-digit Steam user ID can be found in:
-  - `Transient.GearboxAccountData_1`
-  - `Transient.OnlineSubsystemSteamworks_0`
+  - `GearboxAccountData'Transient.GearboxAccountData_1'`
+  - `OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'`
 - Your console history can be found in:
-  - `Transient.WillowGameEngine_0:WillowGameViewportClient_0.WillowConsole_0`
+  - `WillowConsole'Transient.WillowGameEngine_0:WillowGameViewportClient_0.WillowConsole_0'`
 
 Of those objects, only `Loader.TheWorld:PersistentLevel.WorldInfo_1` and
 `Loader.TheWorld:PersistentLevel.WillowPlayerReplicationInfo_44` have historically
 appeared in the BLCMM resource dumps.
+
+I didn't bother writing anything automated to remove any of this, so
+just edit the dump files by hand at this point (they should be nicely split
+up by class after the previous step).  Our to-BLCMM process will only grab
+the two objects listed in the previous paragraph, so it should be a very
+small number of edits.
 
 ### Convert dumps to BLCMM format
 
