@@ -243,6 +243,14 @@ directory.  It expects to be run in the same directory that `categorize_data.py`
 was run, so it's got that `categorized` directory to work with.  It will
 output the Jars into `generated_blcmm_data`.
 
+After the data's been generated, you can also run `compare_blcmm_data.py` to
+compare our own data collection versus BLCMM's original data, just to spot-check
+the data in case anything obvious was missing.  Like other utilities, you'll
+have to change a file path or two in the code itself.  This expects to have
+the `categorized` folder still available, and the `generate_blcmm_data.py`
+script already run.  My first runthrough of this process generated the following:
+https://drive.google.com/open?id=1vLBRgs-UkYfOmStP6D3KjjcYbOvMunvX
+
 License
 -------
 
