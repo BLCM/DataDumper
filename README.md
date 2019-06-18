@@ -186,7 +186,27 @@ to that mode, and start it up again!
 
 ### Filter out sensitive data
 
-This hasn't been started yet!
+This is not actually integrated with anything yet, but here are the
+locations where personal information seems to be stored.  This may not be
+exhaustive -- these are just the locations I've found so far.
+
+- Your hostname can be found in:
+  - `Loader.TheWorld:PersistentLevel.WorldInfo_1`
+- Your Steam username can be found in:
+  - `Loader.TheWorld:PersistentLevel.WillowPlayerReplicationInfo_44`
+  - `Transient.OnlineSubsystemSteamworks_0`
+  - `Transient.DataStoreClient_0:UIDataStore_OnlinePlayerData_42`
+  - `Transient.WillowGameEngine_0:WillowGameViewportClient_0`
+  - `Transient.WillowOnlineGameSettings_0`
+- Your 17-digit Steam user ID can be found in:
+  - `Transient.GearboxAccountData_1`
+  - `Transient.OnlineSubsystemSteamworks_0`
+- Your console history can be found in:
+  - `Transient.WillowGameEngine_0:WillowGameViewportClient_0.WillowConsole_0`
+
+Of those objects, only `Loader.TheWorld:PersistentLevel.WorldInfo_1` and
+`Loader.TheWorld:PersistentLevel.WillowPlayerReplicationInfo_44` have historically
+appeared in the BLCMM resource dumps.
 
 ### Convert dumps to BLCMM format
 
