@@ -43,7 +43,8 @@ those file paths in the scripts!
    scripts in `scripts` to your `WillowGames` folder (where your
    `Logs` and `SaveData` dirs are), make sure you can activate "Data Dumper"
    from PythonSDK's "Mods" menu.  Have a level 80 char who's been through
-   *all* game content ready to go.
+   *all* game content ready to go, and when you enter the game, play in
+   Normal so that you won't be in danger of getting killed.
 1. Start BL2, activate Data Dumper, head into game, hit `B` to run in the
    default forward-maps mode.  Once the game auto-exits, copy `Launch.log`
    up alongside the scripts you copied, with the filename
