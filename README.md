@@ -17,8 +17,66 @@ BL2/TPS engines, having access to engine functions directly.  It also
 uses a few external [Python](https://www.python.org/) scripts to massage
 the data and get it into a usable format.
 
-Method
-------
+Note that currently this process has *only* been tested in Borderlands 2,
+though the same process should work fine on The Pre-Sequel.
+
+The "Short" Version
+-----------------
+
+If you're familiar with Python, and already have PythonSDK running, here's
+a real short step-by-step process of how to get your own full data dumps
+from BL2.
+
+When running scripts manually, you will doubtless have to change some file
+paths in these utilities, since those are hardcoded in there.  For instance,
+`generate_obj_dump_lists.py` has a hardcoded path to your Borderlands
+`Binaries` directory.  The filenames I specify in these steps are the
+ones hardcoded into the utilities, but you can feel free to name them
+whatever you want so long as you don't mind changing them in the scripts,
+too.
+
+The utilities here have only ever been run on Linux, but they should
+theoretically work fine on Windows as well.  Just remember to update
+those file paths in the scripts!
+
+0. Install the `DataDumper` mod into PythonSDK's `Mods` dir, copy the
+   scripts in `scripts` to your `WillowGames` folder (where your
+   `Logs` and `SaveData` dirs are), make sure you can activate "Data Dumper"
+   from PythonSDK's "Mods" menu.  Have a level 80 char who's been through
+   *all* game content ready to go.
+1. Start BL2, activate Data Dumper, head into game, hit `B` to run in the
+   default forward-maps mode.  Once the game auto-exits, copy `Launch.log`
+   up alongside the scripts you copied, with the filename
+   `Launch.log-all_object_names_fwd`
+2. Start BL2 again, activate Data Dumper, head into game, hit `O` to
+   cycle to reverse-maps mode, and hit `B` to run again.  Once the game
+   auto-exits, copy `Launch.log` up alongside the scripts you copied, with
+   the filename `Launch.log-all_object_names_rev`
+3. Run `generate_obj_dump_lists.py`
+4. Start BL2 again, activate Data Dumper, head into game, hit `O` twice to
+   cycle to object dumping mode, and hit `B` to start.  Once the game
+   auto-exits, check `Launch.log` starting from `switch.to.charvehicle`
+   and see if there are a bunch of `No objects found` errors after awhile.
+5. If there were no `No objects found` errors in the `charvehicle` section,
+   copy `Launch.log` up alongside the scripts, with the filename
+   `Launch.log-data_dumps`
+6. If there *were* errors in the `charvehicle` section, copy `Launch.log`
+   up with the scripts as `Launch.log-data_dumps_minus_charvehicle`.
+   Start BL2 again, activate Data Dumper, head into game, hit `O` three
+   times to switch to the character/vehicle mode, and hit `B` to start.
+   Once the game exits, save `Launch.log` as `Launch.log-data_dumps_charvehicle`
+   and run `combine_vehiclechar.py` to generate `Launch.log-data_dumps`.
+7. Run `categorize_data.py`
+8. Sanitize any data if you like, removing some personal information from
+   the dumps in the `categorized` directory.  See below for known locations
+   of personal information (steam username/userid, hostname, etc).
+9. Run `generate_blcmm_data.py` - this will generate OE-compatible files
+   inside the directory `generated_blcmm_data`
+10. Run `compare_blcmm_data.py` to generate a list of how the new data
+    files compare to your existing files, just to spot-check the data.
+
+General Method Outline
+----------------------
 
 The general method for data collection goes like this:
 
@@ -75,6 +133,10 @@ The general method for data collection goes like this:
   command 'obj dump switch.to.foo'` markers to differentiate what stage
   of the dump you're in, and generate a list of objects per map/whatever
   which only contains objects found in both dumps.
+- Make sure to do your checking in a case-insensitive manner.  The object
+  names returned by `getall` can vary sometimes, for some reason.  For
+  instance, you're likely to see an object with `CaraVan` versus `Caravan`
+  at some point in your dumps.
 
 ### 4. Generate a list of objects to dump in each level
 
@@ -121,10 +183,13 @@ The general method for data collection goes like this:
 
 ### 7. Convert to BLCMM Format
 
+- At this point, this is a pretty trivial step.  The BLCMM OE data format
+  is basically just zip files containing the plaintext dumps, with a few
+  extra files to serve as indexes for the data.  I won't document it
+  fully here, but it should be easy enough to look into the code.
+
 Status / HOWTO
 --------------
-
-This is still in-progress, so details may change.
 
 ### In-game Data Dumping (getall and obj-dump steps)
 
@@ -176,8 +241,7 @@ Running on Windows would look something like:
     C:\Program Files\Steam\whatever\> python generate_obj_dump_lists.py
 
 Right now the operational parameters of the script are just hardcoded at
-the top, but I plan on making that a little more user-friendly before I'm
-through with creating these utilities.
+the top, so you may have to change some paths up there to get it to work.
 
 Regardless, once this script is done, it will have generated a ton of files
 which the DataDumper PythonSDK mod can use (in its "data dump" mode) to
@@ -204,8 +268,10 @@ directory).  The script is called `categorize_data.py`, inside the
 `scripts` folder here.
 
 Like the other scripts here, it's somewhat rough, and requires some
-editing of file paths right in the script itself.  Will attempt to
-fix that up a bit later.
+editing of file paths right in the script itself.  Let me know if you
+experience problems running this app on Windows - it opens up a *lot*
+of filehandles at the same time, and I'm not sure if Windows will allow
+that or not.
 
 ### Filter out sensitive data
 

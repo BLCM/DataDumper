@@ -32,7 +32,7 @@ dump_start_re = re.compile('^\*\*\* Property dump for object \'(\S+) (\S+)\' \*\
 print('NOTE: This utility will open up about 3,500 files simultaneously while writing')
 print('data.  If your OS imposes a limit on open filehandles, it may error out')
 print('before finishing.  If running this on Linux, you may need to add a line to')
-print('/etc/security.limits.conf with content such as:')
+print('/etc/security/limits.conf with content such as:')
 print('')
 print('    <username>     soft    nofile  4096')
 print('')

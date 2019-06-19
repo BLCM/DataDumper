@@ -43,6 +43,7 @@ for filename in os.listdir(stock_files_dir):
                     if inner_file.filename.endswith('.dict'):
                         blcmm_objects = set()
                         our_objects = set()
+                        lower_to_upper = {}
                         class_name = inner_file.filename.split('/')[-1].split('.', 1)[0]
                         print(' * {}'.format(class_name))
 
@@ -51,13 +52,15 @@ for filename in os.listdir(stock_files_dir):
                             wrapped = io.TextIOWrapper(df)
                             for line in wrapped:
                                 obj_name = line.strip().split(' ', 1)[1]
-                                blcmm_objects.add(obj_name)
+                                blcmm_objects.add(obj_name.lower())
+                                lower_to_upper[obj_name.lower()] = obj_name
 
                         # Get our own list of objects for the given class
                         with open(os.path.join(data_dir, '{}.dict'.format(class_name))) as df:
                             for line in df:
                                 obj_name = line.strip().split(' ', 1)[1]
-                                our_objects.add(obj_name)
+                                our_objects.add(obj_name.lower())
+                                lower_to_upper[obj_name.lower()] = obj_name
 
                         # Report!
                         only_in_blcmm = blcmm_objects - our_objects
@@ -68,11 +71,11 @@ for filename in os.listdir(stock_files_dir):
                                 print('', file=odf)
                                 print(' * Only in BLCMM data:', file=odf)
                                 for cn_loop in sorted(only_in_blcmm):
-                                    print('   - {}'.format(cn_loop), file=odf)
+                                    print('   - {}'.format(lower_to_upper[cn_loop]), file=odf)
                             if len(only_in_ours) > 0:
                                 print('', file=odf)
                                 print(' * Only in our own data:', file=odf)
                                 for cn_loop in sorted(only_in_ours):
-                                    print('   + {}'.format(cn_loop), file=odf)
+                                    print('   + {}'.format(lower_to_upper[cn_loop]), file=odf)
                             print('', file=odf)
 

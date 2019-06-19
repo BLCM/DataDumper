@@ -26,7 +26,7 @@ import tempfile
 
 filename_fwd = 'Launch.log-all_object_names_fwd'
 filename_rev = 'Launch.log-all_object_names_rev'
-output_dir = '/usr/local/games/Steam/SteamApps/common/Borderlands 2/Binaries/objdump'
+output_dir = '/usr/local/games/Steam/SteamApps/common/Borderlands 2/Binaries/datadumper'
 
 # 800 feels absurdly low to me, but 1k was too much for the objects that
 # happened to get dumped in Caustic Caverns.  When I was doing some more
@@ -84,7 +84,7 @@ class MapFileDumps(object):
                 if match:
                     if not cur_level:
                         raise Exception('found object name but no level')
-                    print(match.group(2), file=cur_level)
+                    print(match.group(2).lower(), file=cur_level)
                 else:
                     match = switch_re.match(line)
                     if match:
@@ -143,9 +143,10 @@ with open(filename_fwd, encoding='latin1') as df:
                 raise Exception('found object name but no level')
             obj_type = match.group(1)
             obj_name = match.group(2)
-            if obj_type not in type_blacklist and obj_name in cur_rev_set and obj_name not in seen_objects:
+            obj_name_lower = obj_name.lower()
+            if obj_type not in type_blacklist and obj_name_lower in cur_rev_set and obj_name_lower not in seen_objects:
                 cur_set.add(obj_name)
-                seen_objects.add(obj_name)
+                seen_objects.add(obj_name_lower)
         else:
             match = switch_re.match(line)
             if match:
