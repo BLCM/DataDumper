@@ -24,7 +24,7 @@ The "Short" Version
 -----------------
 
 If you're familiar with Python, and already have PythonSDK running, here's
-a real short step-by-step process of how to get your own full data dumps
+a "brief" step-by-step process of how to get your own full data dumps
 from BL2.
 
 When running scripts manually, you will doubtless have to change some file
@@ -75,6 +75,15 @@ those file paths in the scripts!
 10. Run `compare_blcmm_data.py` to generate a list of how the new data
     files compare to your existing files, just to spot-check the data.
 
+Steps 1 and 2 should take about two hours each, and generate about a 6GB
+logfile each.  Step 4 should take about 90 minutes, and generate another
+6GB file.  While processing, you'll want another 8GB or so free space
+beyond that, to allow for processing.  So make sure you've got at least
+26GB free on your HD before starting this off.  You can decrease that
+requirement by removing some files as you go, of course -- once you've
+done step 4, you don't actually need the files from steps 1 or 2 anymore,
+for instance.
+
 General Method Outline
 ----------------------
 
@@ -103,7 +112,7 @@ The general method for data collection goes like this:
   - Prior to this section, generate an easily-recognizable line in the
     logfile by doing an `obj dump switch.to.mainmenu`
 - Quit the game and save `Launch.log` where it can be found later.  The
-  file should be about 5.7GB (as of mid-June, 2019), and on my PC took
+  file should be little under 6GB (as of mid-June, 2019), and on my PC took
   a little under two hours to complete.
 
 ### 2. Generate a list of objects to dump, part 2
