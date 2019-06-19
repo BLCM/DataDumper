@@ -1,7 +1,7 @@
 Borderlands 2/TPS Data Dumper
 =============================
 
-This is an in-progress system for generating data dumps from Borderlands
+This is a system for generating data dumps from Borderlands
 2 and TPS, for the purposes of generating Object Explorer data for use
 in [BLCMM](https://github.com/BLCM/BLCMods/wiki/Borderlands-Community-Mod-Manager),
 and for [FT Explorer](https://github.com/apocalyptech/ft-explorer).  It
@@ -316,6 +316,18 @@ have to change a file path or two in the code itself.  This expects to have
 the `categorized` folder still available, and the `generate_blcmm_data.py`
 script already run.  My first runthrough of this process generated the following:
 https://drive.google.com/open?id=1vLBRgs-UkYfOmStP6D3KjjcYbOvMunvX
+
+FT/BLCMM Explorer Integration
+-----------------------------
+
+This is really only of interest to Apocalyptech, but in case you were interested
+too: importing this data into FT/BLCMM Explorer is pretty simple.  The main
+thing is, after running `generate_blcmm_data.py`, to compress the `.dump` files using
+[lzma](https://en.wikipedia.org/wiki/Lempel%E2%80%93Ziv%E2%80%93Markov_chain_algorithm#xz_and_7z_formats)
+(on Linux this can be done with the `xz` utilitiy).  You'll end up with files
+named `ClassName.dump.xz`.  Copy those into the relevant FT Explorer resource
+directory, and then run `generate_indexes.py` (at the top level of that project).
+That's it!
 
 License
 -------
