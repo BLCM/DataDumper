@@ -165,6 +165,7 @@ The general method for data collection goes like this:
   part of the BLCMM OE dataset anyway, so shouldn't be missed:
   - `AnimSequence`
   - `GBXNavMesh`
+  - `GFxRawData`
   - `SwfMovie`
   - `Terrain`
 
