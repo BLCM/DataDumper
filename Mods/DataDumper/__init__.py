@@ -33,10 +33,13 @@ class DataDumper(bl2sdk.BL2MOD):
     dd_key = 'B'
 
     cancel_input_name = 'Cancel Dumps'
-    cancel_key = 'P'
+    cancel_key = 'O'
 
     mode_input_name = 'Cycle Mode'
-    mode_key = 'O'
+    mode_key = 'N'
+
+    mode_rev_input_name = 'Cycle Mode Backwards'
+    mode_rev_key = 'P'
 
     tick_func_name = 'WillowGame.WillowGameViewportClient.Tick'
     tick_hook_name = 'TickHook'
@@ -62,16 +65,57 @@ class DataDumper(bl2sdk.BL2MOD):
     magic_commands = {}
 
     (MODE_FWD,
+            MODE_FWD_WITHOUT_CHAR,
             MODE_REV,
+            MODE_REV_WITHOUT_CHAR,
+            MODE_AXTON_SKIFF1,
+            MODE_AXTON_SKIFF2,
+            MODE_MAYA_FAN1,
+            MODE_MAYA_FAN2,
+            MODE_GAIGE_BTECH,
+            MODE_GAIGE_RUNNER,
+            MODE_ZERO,
+            MODE_KRIEG,
             MODE_DUMP,
-            MODE_DUMP_CHARVEHICLE,
-            ) = range(4)
+            MODE_DUMP_WITHOUT_CHAR,
+            MODE_DUMP_AXTON_SKIFF1,
+            MODE_DUMP_AXTON_SKIFF2,
+            MODE_DUMP_MAYA_FAN1,
+            MODE_DUMP_MAYA_FAN2,
+            MODE_DUMP_GAIGE_BTECH,
+            MODE_DUMP_GAIGE_RUNNER,
+            MODE_DUMP_ZERO,
+            MODE_DUMP_KRIEG,
+            MODE_RANDOM_MAPS,
+            ) = range(23)
+
+    (TYPE_GETALL,
+            TYPE_DUMP) = range(2)
 
     MODE_ENG = {
-            MODE_FWD: ('Maps Forward', None),
-            MODE_REV: ('Maps Reverse', None),
-            MODE_DUMP: ('Dump Data', None),
-            MODE_DUMP_CHARVEHICLE: ('Dump Character/Vehicle Data Only', None),
+            MODE_FWD: ('Maps Forward (with char+vehicle)', None, TYPE_GETALL),
+            MODE_FWD_WITHOUT_CHAR: ('Maps Forward (without char+vehicle)', None, TYPE_GETALL),
+            MODE_REV: ('Maps Reverse (with char+vehicle)', None, TYPE_GETALL),
+            MODE_REV_WITHOUT_CHAR: ('Maps Reverse (without char+vehicle)', None, TYPE_GETALL),
+            MODE_AXTON_SKIFF1: ('Axton + Skiff 1 Getall', 'axton1', TYPE_GETALL),
+            MODE_AXTON_SKIFF2: ('Axton + Skiff 2 Getall', 'axton2', TYPE_GETALL),
+            MODE_MAYA_FAN1: ('Maya + Fan 1 Getall', 'maya1', TYPE_GETALL),
+            MODE_MAYA_FAN2: ('Maya + Fan 2 Getall', 'maya2', TYPE_GETALL),
+            MODE_GAIGE_BTECH: ('Gaige + BTech Getall', 'gaige1', TYPE_GETALL),
+            MODE_GAIGE_RUNNER: ('Gaige + Runner Getall', 'gaige2', TYPE_GETALL),
+            MODE_ZERO: ('Zer0 Getall', 'zero', TYPE_GETALL),
+            MODE_KRIEG: ('Krieg Getall', 'krieg', TYPE_GETALL),
+            MODE_DUMP: ('Dump Data (with char+vehicle)', None, TYPE_DUMP),
+            MODE_DUMP_WITHOUT_CHAR: ('Dump Data (without char+vehicle)', None, TYPE_DUMP),
+            MODE_DUMP_AXTON_SKIFF1: ('Axton + Skiff 1 Dump', 'axton1', TYPE_DUMP),
+            MODE_DUMP_AXTON_SKIFF2: ('Axton + Skiff 2 Dump', 'axton2', TYPE_DUMP),
+            MODE_DUMP_MAYA_FAN1: ('Maya + Fan 1 Dump', 'maya1', TYPE_DUMP),
+            MODE_DUMP_MAYA_FAN2: ('Maya + Fan 2 Dump', 'maya2', TYPE_DUMP),
+            MODE_DUMP_GAIGE_BTECH: ('Gaige + BTech Dump', 'gaige1', TYPE_DUMP),
+            MODE_DUMP_GAIGE_RUNNER: ('Gaige + Runner Dump', 'gaige2', TYPE_DUMP),
+            MODE_DUMP_ZERO: ('Zer0 Dump', 'zero', TYPE_DUMP),
+            MODE_DUMP_KRIEG: ('Krieg Dump', 'krieg', TYPE_DUMP),
+            MODE_RANDOM_MAPS: ('Random Maps', None, None),
             }
 
     level_list = [
@@ -322,6 +366,7 @@ class DataDumper(bl2sdk.BL2MOD):
     command_list = []
     waiting_for_command = False
     elapsed_time = 0
+    running = False
 
     def Enable(self):
 
@@ -406,6 +451,7 @@ class DataDumper(bl2sdk.BL2MOD):
         # Set up hooks
         self.RegisterGameInput(self.dd_input_name, self.dd_key)
         self.RegisterGameInput(self.mode_input_name, self.mode_key)
+        self.RegisterGameInput(self.mode_rev_input_name, self.mode_rev_key)
         self.RegisterGameInput(self.cancel_input_name, self.cancel_key)
         bl2sdk.RegisterHook(self.tick_func_name, self.tick_hook_name, staticDoApocTick)
 
@@ -414,85 +460,124 @@ class DataDumper(bl2sdk.BL2MOD):
         # Get rid of hooks
         self.UnregisterGameInput(self.dd_input_name)
         self.UnregisterGameInput(self.mode_input_name)
+        self.UnregisterGameInput(self.mode_rev_input_name)
         self.UnregisterGameInput(self.cancel_input_name)
         bl2sdk.RemoveHook(self.tick_func_name, self.tick_hook_name)
 
-    def cycleMode(self):
+    def cycleMode(self, backwards=False):
         """
         Cycle through our available modes.
         """
-        self.cur_mode = (self.cur_mode + 1) % len(self.MODE_ENG)
-        self.cur_command_idx = -1
-        self.command_list = []
 
-        if self.cur_mode == self.MODE_FWD:
-            # Loop through levels, then do chars/vehicles, then main menu, then quit!
-            for level in self.level_list:
-                self.add_open_level(level)
+        if not self.running:
+
+            if backwards:
+                self.cur_mode = (self.cur_mode - 1) % len(self.MODE_ENG)
+            else:
+                self.cur_mode = (self.cur_mode + 1) % len(self.MODE_ENG)
+            self.cur_command_idx = -1
+            self.command_list = []
+
+            if self.cur_mode == self.MODE_FWD or self.cur_mode == self.MODE_FWD_WITHOUT_CHAR:
+
+                do_char_vehicle = (self.cur_mode == self.MODE_FWD)
+
+                # Loop through levels, then do chars/vehicles, then main menu, then quit!
+                for level in self.level_list:
+                    self.add_open_level(level)
+                    self.add_getall()
+                if do_char_vehicle:
+                    self.add_chars_vehicles()
+                    self.add_getall()
+                self.add_main_menu()
                 self.add_getall()
-            self.add_chars_vehicles()
-            self.add_getall()
-            self.add_main_menu()
-            self.add_getall()
-            self.add_exit()
+                if do_char_vehicle:
+                    self.add_exit()
+                else:
+                    self.add_user_feedback('Done!  Hit "{}/{}" to cycle modes.'.format(
+                        self.mode_key,
+                        self.mode_rev_key,
+                        ))
 
-        elif self.cur_mode == self.MODE_REV:
-            # Lead off with a couple of random map loads, to further mix things up
-            self.add_user_feedback('Loading random map 1/2...')
-            self.add_open_level(random.choice(self.level_list), do_switch_to=False)
-            self.add_user_feedback('Loading random map 2/2...')
-            self.add_open_level(random.choice(self.level_list), do_switch_to=False)
+            elif self.cur_mode == self.MODE_REV or self.cur_mode == self.MODE_REV_WITHOUT_CHAR:
 
-            # Then it's more or less just the same as FWD, but with some reversed
-            # loading orders
-            for level in reversed(self.level_list):
-                self.add_open_level(level)
+                do_char_vehicle = (self.cur_mode == self.MODE_REV)
+
+                # Lead off with a couple of random map loads, to further mix things up
+                self.add_user_feedback('Loading random map 1/2...')
+                self.add_open_level(random.choice(self.level_list), do_switch_to=False)
+                self.add_user_feedback('Loading random map 2/2...')
+                self.add_open_level(random.choice(self.level_list), do_switch_to=False)
+
+                # Then it's more or less just the same as FWD, but with some reversed
+                # loading orders
+                for level in reversed(self.level_list):
+                    self.add_open_level(level)
+                    self.add_getall()
+                if do_char_vehicle:
+                    self.add_chars_vehicles(reverse=True)
+                    self.add_getall()
+                self.add_main_menu()
                 self.add_getall()
-            self.add_chars_vehicles(reverse=True)
-            self.add_getall()
-            self.add_main_menu()
-            self.add_getall()
-            self.add_exit()
+                if do_char_vehicle:
+                    self.add_exit()
+                else:
+                    self.add_user_feedback('Done!  Hit "{}/{}" to cycle modes.'.format(
+                        self.mode_key,
+                        self.mode_rev_key,
+                        ))
 
-        elif self.cur_mode == self.MODE_DUMP:
+            elif self.cur_mode == self.MODE_DUMP or self.cur_mode == self.MODE_DUMP_WITHOUT_CHAR:
 
-            # May as well grab defaults first
-            self.add_dumps('defaults')
+                do_char_vehicle = (self.cur_mode == self.MODE_DUMP)
 
-            # Loop through levels, then do chars/vehicles, then main menu, then quit!
-            for level in self.level_list:
-                self.add_open_level(level)
-                self.add_dumps(level)
-            self.add_chars_vehicles()
-            self.add_dumps('charvehicle')
-            self.add_main_menu()
-            self.add_dumps('mainmenu')
-            self.add_exit()
+                # May as well grab defaults first
+                self.add_dumps('defaults')
 
-        elif self.cur_mode == self.MODE_DUMP_CHARVEHICLE:
+                # Loop through levels, then do chars/vehicles, then main menu, then quit!
+                for level in self.level_list:
+                    self.add_open_level(level)
+                    self.add_dumps(level)
+                if do_char_vehicle:
+                    self.add_chars_vehicles()
+                    self.add_dumps('charvehicle')
+                self.add_main_menu()
+                self.add_dumps('mainmenu')
+                if do_char_vehicle:
+                    self.add_exit()
+                else:
+                    self.add_user_feedback('Done!  Hit "{}/{}" to cycle modes.'.format(
+                        self.mode_key,
+                        self.mode_rev_key,
+                        ))
 
-            # Special mode to *just* do characters/vehicles.  On my
-            # first runthrough of MODE_DUMP, only the first charvehicle
-            # `exec` returned data - beyond that it was all "No objects found."
-            # Possibly I'd just gotten unlucky with GC, or it could potentially
-            # be systemic.  Regardless, it works just fine if it's the *only*
-            # thing you do, so here it is.
-            self.add_chars_vehicles()
-            self.add_dumps('charvehicle')
-            self.add_exit()
+            elif self.cur_mode == self.MODE_RANDOM_MAPS:
 
-        else:
-            # This actually shouldn't get hit anymore
-            self.say('ERROR: How did you get here?  Unknown mode...')
-            self.add_switch_to(self.MODE_ENG[self.cur_mode][1])
-            self.add_getall()
+                # Go to a few random maps, just to mix things up and increment
+                # some dynamically-named object suffixes.
+                map_count = 3
+                for i in range(map_count):
+                    self.add_user_feedback('Loading random map {}/{}...'.format(i+1, map_count))
+                    self.add_open_level(random.choice(self.level_list), do_switch_to=False)
 
-        # Report to the user
-        self.say('Switched to mode: {} - hit "{}" to start, or "{}" to change modes.'.format(
-            self.MODE_ENG[self.cur_mode][0],
-            self.dd_key,
-            self.mode_key,
-            ))
+            else:
+
+                # This is either a char-specific getall, or char-specific dump
+                (eng_name, section, mode_type) = self.MODE_ENG[self.cur_mode]
+                self.add_switch_to(section)
+                if self.MODE_ENG[self.cur_mode][2] == self.TYPE_GETALL:
+                    self.add_getall()
+                else:
+                    self.add_dumps(section)
+
+            # Report to the user
+            self.say('Switched to mode {}: {} - hit "{}" to start, or "{}/{}" to change modes.'.format(
+                self.cur_mode + 1,
+                self.MODE_ENG[self.cur_mode][0],
+                self.dd_key,
+                self.mode_key,
+                self.mode_rev_key,
+                ))
 
     def add_switch_to(self, label):
         """
@@ -573,12 +658,14 @@ class DataDumper(bl2sdk.BL2MOD):
         """
         Runs our currently-defined mode
         """
-        self.say('Running current mode ({}) - hit "{}" to cancel'.format(
-            self.MODE_ENG[self.cur_mode][0],
-            self.cancel_key,
-            ))
-        self.cur_command_idx = -1
-        self.modeStep()
+        if not self.running:
+            self.running = True
+            self.say('Running current mode ({}) - hit "{}" to cancel'.format(
+                self.MODE_ENG[self.cur_mode][0],
+                self.cancel_key,
+                ))
+            self.cur_command_idx = -1
+            self.modeStep()
 
     def modeStep(self):
         """
@@ -595,6 +682,7 @@ class DataDumper(bl2sdk.BL2MOD):
                 self.setNextDelay(delay)
         else:
             self.say('Finished running {}'.format(self.MODE_ENG[self.cur_mode][0]))
+            self.running = False
 
     def load_packages(self, packages):
         """
@@ -629,13 +717,16 @@ class DataDumper(bl2sdk.BL2MOD):
         """
         Cancel our runthrough
         """
-        self.waiting_for_command = False
-        self.cur_command_idx = -1
-        self.elapsed_time = 0
-        self.say('Cancelled runthrough, use "{}" to start again or "{}" to change modes'.format(
-            self.dd_key,
-            self.mode_key,
-            ))
+        if self.running:
+            self.waiting_for_command = False
+            self.cur_command_idx = -1
+            self.elapsed_time = 0
+            self.say('Cancelled runthrough, use "{}" to start again or "{}/{}" to change modes'.format(
+                self.dd_key,
+                self.mode_key,
+                self.mode_rev_key,
+                ))
+            self.running = False
 
     def say(self, text):
         """
@@ -668,6 +759,8 @@ class DataDumper(bl2sdk.BL2MOD):
             self.runMode()
         elif input_obj.Name == self.mode_input_name:
             self.cycleMode()
+        elif input_obj.Name == self.mode_rev_input_name:
+            self.cycleMode(backwards=True)
         elif input_obj.Name == self.cancel_input_name:
             self.cancelCycle()
 

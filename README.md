@@ -18,10 +18,12 @@ uses a few external [Python](https://www.python.org/) scripts to massage
 the data and get it into a usable format.
 
 Note that currently this process has *only* been tested in Borderlands 2,
-though the same process should work fine on The Pre-Sequel.
+though the same process should work fine on The Pre-Sequel.  There are
+various places in the utilities which would have to be updated to work
+with TPS, though.
 
 The "Short" Version
------------------
+-------------------
 
 If you're familiar with Python, and already have PythonSDK running, here's
 a "brief" step-by-step process of how to get your own full data dumps
@@ -39,6 +41,51 @@ The utilities here have only ever been run on Linux, but they should
 theoretically work fine on Windows as well.  Just remember to update
 those file paths in the scripts!
 
+### A Note About Character Data
+
+The original version of this dump process fully automated getting object
+dumps for all characters and vehicles, by using PythonSDK's ability to
+load packages on the backend.  It turns out that doing so will omit
+six objects from the dumps, though (and technically will include some
+objects in the dumps which never get loaded by the game while actually
+playing it).  So *technically*, to get the full object set, you'll have
+to do some manual work to load a character, get the object dumps, then
+load the next character, get *those* object dumps, etc.  Alternatively,
+if you don't mind having the not-actually-in-the-game objects in your
+dumps, you could do the fully-automated process, and then just do a
+handful of manual dumps, putting them into your `Launch.log` where
+appropriate.  The objects which are missing from the fully-automated
+method are:
+
+- `GD_Attributes_Lilac.Init_PlayerSkillDamage_AdditionalDamagePerLvl`
+- `GD_Attributes_Lilac.Init_PlayerSkillDamage_Part2`
+- `GD_Attributes_Lilac.Init_PsychoSkillDamage`
+- `GD_Balance_HealthAndDamage.Init_PlayerSkillDamage_AdditionalDamagePerLvl`
+- `GD_Balance_HealthAndDamage.Init_PlayerSkillDamage_Part2`
+- `GD_Tulip_DeathTrap.AI.WillowAIDef_DeathTrap:AIBehaviorProviderDefinition_1.Behavior_DeathTrapSoundFix`
+
+The first three will be present if you load up Krieg, and the next three
+can be dumped when Gaige is loaded.  (The `GD_Balance_HealthAndDamage`
+objects also show up for Maya, and possibly others, but since you're
+grabbing the DeathTrap one anyway, you may as well just grab them from
+Gaige.)
+
+After finding out about the missing data (at first I'd only known about
+`Init_PlayerSkillDamage_AdditionalDamagePerLvl`), I'd also done manual
+dumps for all vehicles, just in case I was missing anything.  It turns
+out that I wasn't, but the manual character-dump process below also
+includes vehicles in the manual steps.  That's not really necessary,
+but if you're doing the character work already it's not *that* much
+more.
+
+Whether or not those six objects are worth going through each character
+to dump manually is certainly up to you.  In the end, if I wasn't
+doing these to provide "clean" BLCMM OE dumps, I probably wouldn't care,
+though the data that I'm providing for OE is now constructed using
+the manual dumps.
+
+### Original, Fully-Automated Dumps
+
 0. Install the `DataDumper` mod into PythonSDK's `Mods` dir, copy the
    scripts in `scripts` to your `WillowGames` folder (where your
    `Logs` and `SaveData` dirs are), make sure you can activate "Data Dumper"
@@ -46,34 +93,38 @@ those file paths in the scripts!
    *all* game content ready to go, and when you enter the game, play in
    Normal so that you won't be in danger of getting killed.
 1. Start BL2, activate Data Dumper, head into game, hit `B` to run in the
-   default forward-maps mode.  Once the game auto-exits, copy `Launch.log`
-   up alongside the scripts you copied, with the filename
-   `Launch.log-all_object_names_fwd`
-2. Start BL2 again, activate Data Dumper, head into game, hit `O` to
-   cycle to reverse-maps mode, and hit `B` to run again.  Once the game
+   default `Maps Forward (with char+vehicle)` mode.  Once the game
    auto-exits, copy `Launch.log` up alongside the scripts you copied, with
-   the filename `Launch.log-all_object_names_rev`
+   the filename `Launch.log-all_object_names_fwd`
+2. Start BL2 again, activate Data Dumper, head into game, hit `N` twice to
+   cycle to `Maps Reverse (with char+vehicle)` mode, and hit `B` to run
+   again.  Once the game auto-exits, copy `Launch.log` up alongside the scripts
+   you copied, with the filename `Launch.log-all_object_names_rev`
 3. Run `generate_obj_dump_lists.py`
-4. Start BL2 again, activate Data Dumper, head into game, hit `O` twice to
-   cycle to object dumping mode, and hit `B` to start.  Once the game
-   auto-exits, check `Launch.log` starting from `switch.to.charvehicle`
-   and see if there are a bunch of `No objects found` errors after awhile.
+4. Start BL2 again, activate Data Dumper, head into game, hit `N` a bunch until
+   you cycle to `Dump Data (with char+vehicle)` mode, and hit `B` to start.
+   Once the game auto-exits, check `Launch.log` starting from
+   `switch.to.charvehicle` and see if there are a bunch of `No objects found`
+   errors after awhile.
 5. If there were no `No objects found` errors in the `charvehicle` section,
    copy `Launch.log` up alongside the scripts, with the filename
    `Launch.log-data_dumps`
 6. If there *were* errors in the `charvehicle` section, copy `Launch.log`
    up with the scripts as `Launch.log-data_dumps_minus_charvehicle`.
-   Start BL2 again, activate Data Dumper, head into game, hit `O` three
+   Start BL2 again, activate Data Dumper, head into game, hit `N` three
    times to switch to the character/vehicle mode, and hit `B` to start.
    Once the game exits, save `Launch.log` as `Launch.log-data_dumps_charvehicle`
    and run `combine_vehiclechar.py` to generate `Launch.log-data_dumps`.
 7. Run `categorize_data.py`
-8. Sanitize any data if you like, removing some personal information from
+8. If desired, hop back into BL2, load a Krieg and Gaige char, in turn, and
+   dump the above six objects mentioned in the previous section.  Save the
+   dumps manually in the appropriate file in the `categorized` directory.
+9. Sanitize any data if you like, removing some personal information from
    the dumps in the `categorized` directory.  See below for known locations
    of personal information (steam username/userid, hostname, etc).
-9. Run `generate_blcmm_data.py` - this will generate OE-compatible files
+10. Run `generate_blcmm_data.py` - this will generate OE-compatible files
    inside the directory `generated_blcmm_data`
-10. Run `compare_blcmm_data.py` to generate a list of how the new data
+11. Run `compare_blcmm_data.py` to generate a list of how the new data
     files compare to your existing files, just to spot-check the data.
 
 Steps 1 and 2 should take about two hours each, and generate about a 6GB
@@ -84,6 +135,88 @@ beyond that, to allow for processing.  So make sure you've got at least
 requirement by removing some files as you go, of course -- once you've
 done step 4, you don't actually need the files from steps 1 or 2 anymore,
 for instance.
+
+### Newer Dumping Style, with Manual Character/Vehicle Dumps
+
+This method requires some additional setup.  For ease of use, you'll want
+to have some characters ready to go.  What I'd used, and what DataDumper's
+default modes expect, is the following:
+
+- Sal, level 80, who will do the bulk of the automated dumping.  Starting
+  map location is irrelevant.  He should have gone through the *entire* game
+  content, including DLC5 (Commander Lilith), so no cutscenes are triggered
+  when hopping around.  Doesn't actually *have* to be level 80, but if he's
+  overlevelled (and you start the game in Normal), he won't be under threat
+  if enemies end up attacking in the middle of the dumps.
+- Axton, stationed in Wurmwater or Oasis (so long as Catch-a-Ride is active
+  in that DLC).  He will be the one to spawn two sets of Skiffs during the
+  getall/dump stages (Rocket + Harpoon, then Sawblade, or whatever order you
+  want, so long as you're consistent through runs.)
+- Maya, stationed in Scylla's Grove.  She will be the one to spawn two
+  sets of Fan Boats during the getall/dump stages (Corrosive + Flamethrower,
+  then Shock, or whatever order you want, so long as you're consistent
+  through runs.)
+- Gaige, stationed in the Dust (or anywhere else near a Catch-A-Ride where
+  enemies are unlikely to spawn).  She will be the one to spawn first
+  a pair of Bandit Technicals, and then a pair of Runners.
+- Zer0, stationed anywhere
+- Krieg, stationed anywhere
+
+You can, of course, use your own combinations of characters + locations, but
+that setup will match the labels which DataDumper provides via its modes.
+It should be pretty easily editable to match whatever else you want, though
+that's probably about as much work as just using that setup anyway.
+Wurmwater/Oasis and Scylla's Grove seem to be the most convenient maps to spawn
+those vehicles from -- the Fan Boat spawn is just a quick hop down to the
+ground level.
+
+0. Install the `DataDumper` mod into PythonSDK's `Mods` dir, copy the
+   scripts in `scripts` to your `WillowGames` folder (where your
+   `Logs` and `SaveData` dirs are), make sure you can activate "Data Dumper"
+   from PythonSDK's "Mods" menu.  Have the characters listed above ready
+   to go.
+1. Start BL2, activate Data Dumper, head into game as Sal, hit `N` once to
+   cycle to the `Maps Forward (without char+vehicle)` mode.  Hit `B` to run.
+   Once the dumping is done, and you're back on the main menu, load each of the
+   other chars above, in order, hit `N` to cycle to the appropriate mode (for
+   instance, `Axton + Skiff 1 Getall` for the first Axton dump), spawn any
+   vehicles requested by the mode (for instance, Axton should spawn a couple of
+   Skiffs), and then `B` to run the mode.  Repeat for all character/vehicle
+   modes, of which there'll be eight total.  Hit `P` to cycle backwards if you
+   accidentally miss a mode.  Once done and you've exited the game, copy
+   `Launch.log` up alongside the scripts you copied, with the filename
+   `Launch.log-all_object_names_fwd`
+2. Start BL2 again, activate Data Dumper, head into game, hit `N` three times
+   to cycle to `Maps Reverse (without char+vehicle)` mode, and hit `B` to run
+   again.  Once you're at the main menu, go through the list of
+   character+vehicle dumps manually, as you did in the previous step, though
+   you may want to do it backwards, just to have a better chance of catching
+   any dynamically-named objects.  The `P` cycle key should be helpful here.
+   Remember, if going backwards, to spawn the same vehicles in the same
+   "section" as before.  If you spawned a Rocket+Harpoon during `Axton + Skiff
+   1 Getall`, and a Sawblade during `Axton + Skiff 2 Getall`, be sure to only
+   spawn the sawblade when going backwards into #2, again.  Once you've exited
+   again, copy `Launch.log` up alongside the scripts you copied, with the
+   filename `Launch.log-all_object_names_rev`
+3. Run `generate_obj_dump_lists.py`
+4. Start BL2 again, activate Data Dumper, head into game, hit `N` a bunch until
+   you cycle to `Dump Data (without char+vehicle)` mode, and hit `B` to start.
+   When you're back at the main menu and the automated dumps have finished, hop
+   into your individual characters again, using `N` to cycle into the `Axton +
+   Skiff 1 Dump`-style modes, spawning the required vehicles, and using `B` to
+   run the mode.  Once you've exited, copy `Launch.log` up alongside the
+   scripts, with the filename `Launch.log-data_dumps`
+5. Run `categorize_data.py`
+6. If desired, hop back into BL2, load a Krieg and Gaige char, in turn, and
+   dump the above six objects mentioned in the previous section.  Save the
+   dumps manually in the appropriate file in the `categorized` directory.
+7. Sanitize any data if you like, removing some personal information from
+   the dumps in the `categorized` directory.  See below for known locations
+   of personal information (steam username/userid, hostname, etc).
+8. Run `generate_blcmm_data.py` - this will generate OE-compatible files
+   inside the directory `generated_blcmm_data`
+9. Run `compare_blcmm_data.py` to generate a list of how the new data
+   files compare to your existing files, just to spot-check the data.
 
 General Method Outline
 ----------------------
@@ -105,6 +238,11 @@ The general method for data collection goes like this:
   loop to get those object names
   - Prior to this section, generate an easily-recognizable line in the
     logfile by doing an `obj dump switch.to.charvehicle`
+  - This method of package loading *technically* misses six objects which
+    are only loaded if characters are "really" active ingame.  You may
+    want to load characters manually and run dumps that way -- if so,
+    be sure to `obj dump switch.to.charactername` before each of those,
+    to clearly mark the sections.
 - Finally, return to the main menu to do a further set of `getall`.
   - Getting dumps from the main menu is very unlikely to be helpful
     for anything, but it's included for completeness' sake.
@@ -216,23 +354,23 @@ from Lynchwood).  Also make sure that the character you're using has been
 through *all* game content, to prevent any automatic cutscene loading or the
 like.
 
-Once ingame, you can use the `O`/`o` key to cycle through modes.  By default
-it starts with "forward" `getall` loading -- ie: the first step of the above
-procedure.  Hitting `o` once will switch to "reverse" `getall` loading -- ie:
-the second step of the above procedure.  Once more will put it into data
-dumping mode, which requires that you've set up the data files outside of
-the game.  A fourth mode will let you *just* do `obj dump` statements for
-characters/vehicles, in case that fails on the global run -- it seems that
-it's possible to be hit with garbage collection and have some of those
-dumps not work, so check on that when you're done.  Hitting `o` again will
-cycle back to the first mode.
+Once ingame, you can use the `N`/`n` or `P`/`p` keys to cycle through modes
+("next" and "previous").  By default it starts with "forward" `getall` loading
+-- ie: the first step of the above procedure.  Hitting `n` once will switch to
+"reverse" `getall` loading -- ie: the second step of the above procedure.  Once
+more will put it into data dumping mode, which requires that you've set up the
+data files outside of the game.  A fourth mode will let you *just* do `obj
+dump` statements for characters/vehicles, in case that fails on the global run
+-- it seems that it's possible to be hit with garbage collection and have some
+of those dumps not work, so check on that when you're done.  Hitting `n` again
+will cycle back to the first mode.
 
 Hit `B`/`b` to start running the dumps.  You'll get ingame chat messages to
 let you know what it's doing, and will automatically exit the game once
 it's done.  Be sure to save your `Launch.log` files inbetween, if you're
 using the forward/reverse `getall` modes.
 
-If you want to stop running at any point, you can hit `P`/`p`, though note
+If you want to stop running at any point, you can hit `O`/`o`, though note
 that if you hit `b` again after doing so, it'll start over again, which
 could make your `Launch.log` a little inconsistent.  If you cancel, it'll
 be best to quit the game and restart before running again.  (You can, of
