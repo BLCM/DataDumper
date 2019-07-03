@@ -84,6 +84,22 @@ doing these to provide "clean" BLCMM OE dumps, I probably wouldn't care,
 though the data that I'm providing for OE is now constructed using
 the manual dumps.
 
+### One more note about missing objects
+
+There's one further object which seems to get missed regardless of
+which method you use:
+
+- `GD_Lilac_Skills_Hellborn.Skills.Projectile_FireBall:BehaviorProviderDefinition_0.Behavior_AttemptStatusEffect_1`
+
+That object *will* be dumped if we use a different method of changing
+levels while doing our dumps, but *that* new method causes us to miss
+a bunch of other objects.  :NotLikeThis:
+
+So, once you're done with these dumps, hop into a Krieg savegame and
+dump that object.  Note that you should do so with a freshly-started
+BL2 -- the map-change method we use currently will cause that object
+to not exist if you try to dump it in the same session.
+
 ### Original, Fully-Automated Dumps
 
 0. Install the `DataDumper` mod into PythonSDK's `Mods` dir, copy the
@@ -122,9 +138,12 @@ the manual dumps.
 9. Sanitize any data if you like, removing some personal information from
    the dumps in the `categorized` directory.  See below for known locations
    of personal information (steam username/userid, hostname, etc).
-10. Run `generate_blcmm_data.py` - this will generate OE-compatible files
+10. Head back into BL2 as Krieg and manually dump
+    `GD_Lilac_Skills_Hellborn.Skills.Projectile_FireBall:BehaviorProviderDefinition_0.Behavior_AttemptStatusEffect_1`,
+    saving it inside `Behavior_AttemptStatusEffect.dump` once you're out.
+11. Run `generate_blcmm_data.py` - this will generate OE-compatible files
    inside the directory `generated_blcmm_data`
-11. Run `compare_blcmm_data.py` to generate a list of how the new data
+12. Run `compare_blcmm_data.py` to generate a list of how the new data
     files compare to your existing files, just to spot-check the data.
 
 Steps 1 and 2 should take about two hours each, and generate about a 6GB
@@ -207,9 +226,9 @@ ground level.
    run the mode.  Once you've exited, copy `Launch.log` up alongside the
    scripts, with the filename `Launch.log-data_dumps`
 5. Run `categorize_data.py`
-6. If desired, hop back into BL2, load a Krieg and Gaige char, in turn, and
-   dump the above six objects mentioned in the previous section.  Save the
-   dumps manually in the appropriate file in the `categorized` directory.
+6. Head back into BL2 as Krieg and manually dump
+   `GD_Lilac_Skills_Hellborn.Skills.Projectile_FireBall:BehaviorProviderDefinition_0.Behavior_AttemptStatusEffect_1`,
+   saving it inside `Behavior_AttemptStatusEffect.dump` once you're out.
 7. Sanitize any data if you like, removing some personal information from
    the dumps in the `categorized` directory.  See below for known locations
    of personal information (steam username/userid, hostname, etc).

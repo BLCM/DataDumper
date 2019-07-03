@@ -24,6 +24,7 @@
 
 import os
 import re
+import lzma
 import zipfile
 
 game = 'BL2'
@@ -240,6 +241,8 @@ blcmm_org = {
             ],
         'Base':
             [
+            'AnemoneInfectionDefinition',
+            'AnemoneInfectionState',
             'AccessControl',
             'WillowAccessControl',
             'ActionSkill',
@@ -1664,6 +1667,7 @@ blcmm_org = {
             'ParticleModuleVelocityOverLifetime',
             'ParticleModuleVelocity_Seeded',
             'ParticleSystem',
+            'ParticleSystemComponent',
             ],
         'Populations': [
             'PopulationDefinition',
@@ -1836,14 +1840,21 @@ with open(os.path.join(input_dir, main_index_file), 'w') as main_idx_odf:
                 dict_file = '{}.dict'.format(class_name)
                 data_files.append(dict_file)
                 with open(os.path.join(input_dir, dict_file), 'w') as odf:
-                    with open(os.path.join(input_dir, dump_file), encoding='latin1') as df:
-                        line_num = 0
-                        for line in df:
-                            match = dump_start_re.match(line)
-                            if match:
-                                print('{} {}'.format(line_num, match.group(2)), file=odf)
-                                print(match.group(2), file=idx_odf)
-                            line_num += 1
+                    dump_file_full = os.path.join(input_dir, dump_file)
+                    if os.path.exists(dump_file_full):
+                        df = open(dump_file_full, encoding='latin1')
+                    elif os.path.exists('{}.xz'.format(dump_file_full)):
+                        df = lzma.open('{}.xz'.format(dump_file_full), 'rt', encoding='latin1')
+                    else:
+                        raise Exception('Dump file {} not found!'.format(dump_file))
+                    line_num = 0
+                    for line in df:
+                        match = dump_start_re.match(line)
+                        if match:
+                            print('{} {}'.format(line_num, match.group(2)), file=odf)
+                            print(match.group(2), file=idx_odf)
+                        line_num += 1
+                    df.close()
 
         # Finally, create a zipfile!
         zip_filename = os.path.join(output_dir, 'BLCMM_Data_{}_{}.jar'.format(game, cat_name))
@@ -1854,10 +1865,22 @@ with open(os.path.join(input_dir, main_index_file), 'w') as main_idx_odf:
 
             # Add all our data files
             for data_file in data_files:
-                myzip.write(os.path.join(input_dir, data_file), 'resources/data/{}/{}'.format(
-                    game,
-                    data_file,
-                    ))
+                data_file_full = os.path.join(input_dir, data_file)
+                if os.path.exists(data_file_full):
+                    myzip.write(os.path.join(input_dir, data_file), 'resources/data/{}/{}'.format(
+                        game,
+                        data_file,
+                        ))
+                elif os.path.exists('{}.xz'.format(data_file_full)):
+                    with lzma.open('{}.xz'.format(data_file_full)) as df:
+                        myzip.writestr('resources/data/{}/{}'.format(
+                            game,
+                            data_file,
+                            ),
+                            df.read(),
+                            )
+                else:
+                    raise Exception('Data file {} not found!'.format(data_file))
 
 # And finally finally, create our Indices jar.
 print('Processing Indices...')

@@ -22,6 +22,7 @@ import os
 import math
 import random
 import bl2sdk
+from . import dumperdata
 
 class DataDumper(bl2sdk.BL2MOD):
 
@@ -62,6 +63,7 @@ class DataDumper(bl2sdk.BL2MOD):
     pkg_load_magic = '<pkgload>'
     mainmenu_magic = '<mainmenu>'
     exit_magic = '<exit>'
+    map_magic = '<map>'
     magic_commands = {}
 
     (MODE_FWD,
@@ -117,247 +119,6 @@ class DataDumper(bl2sdk.BL2MOD):
             MODE_DUMP_KRIEG: ('Krieg Dump', 'krieg', TYPE_DUMP),
             MODE_RANDOM_MAPS: ('Random Maps', None, None),
             }
-
-    level_list = [
-            'Stockade_P',
-            'Fyrestone_P',
-            'DamTop_P',
-            'Dam_P',
-            'Boss_Cliffs_P',
-            'Caverns_P',
-            'VOGChamber_P',
-            'Interlude_P',
-            'TundraTrain_P',
-            'Ash_P',
-            'BanditSlaughter_P',
-            'Fridge_P',
-            'HypInterlude_P',
-            'IceCanyon_P',
-            'FinalBossAscent_P',
-            'Outwash_P',
-            'Grass_P',
-            'Luckys_P',
-            'Grass_Lynchwood_P',
-            'CreatureSlaughter_P',
-            'HyperionCity_P',
-            'RobotSlaughter_P',
-            'SanctuaryAir_P',
-            'Sanctuary_P',
-            'Sanctuary_Hole_P',
-            'CraterLake_P',
-            'Cove_P',
-            'SouthernShelf_P',
-            'SouthpawFactory_P',
-            'ThresherRaid_P',
-            'Grass_Cliffs_P',
-            'Ice_P',
-            'Frost_P',
-            'TundraExpress_P',
-            'Boss_Volcano_P',
-            'PandoraPark_P',
-            'Glacial_P',
-            'Orchid_Caves_P',
-            'Orchid_WormBelly_P',
-            'Orchid_Spire_P',
-            'Orchid_OasisTown_P',
-            'Orchid_ShipGraveyard_P',
-            'Orchid_Refinery_P',
-            'Orchid_SaltFlats_P',
-            'Iris_DL1_TAS_P',
-            'Iris_DL1_P',
-            'Iris_Moxxi_P',
-            'Iris_Hub_P',
-            'Iris_DL2_P',
-            'Iris_DL3_P',
-            'Iris_DL2_Interior_P',
-            'Iris_Hub2_P',
-            'Sage_PowerStation_P',
-            'Sage_Cliffs_P',
-            'Sage_HyperionShip_P',
-            'Sage_Underground_P',
-            'Sage_RockForest_P',
-            'Dark_Forest_P',
-            'CastleKeep_P',
-            'Village_P',
-            'CastleExterior_P',
-            'Dead_Forest_P',
-            'Dungeon_P',
-            'Mines_P',
-            'TempleSlaughter_P',
-            'Docks_P',
-            'DungeonRaid_P',
-            'Backburner_P',
-            'Sandworm_P',
-            'OldDust_P',
-            'Helios_P',
-            'SanctIntro_P',
-            'ResearchCenter_P',
-            'GaiusSanctuary_P',
-            'SandwormLair_P',
-            'Hunger_P',
-            'Pumpkin_Patch_P',
-            'Xmas_P',
-            'TestingZone_P',
-            'Distillery_P',
-            'Easter_P',
-            ]
-
-    char_vehicle_packages = [
-            'GD_Assassin_Streaming_SF',
-            'GD_Mercenary_Streaming_SF',
-            'GD_Siren_Streaming_SF',
-            'GD_Lilac_Psycho_Streaming_SF',
-            'GD_Tulip_Mechro_Streaming_SF',
-            'GD_Soldier_Streaming_SF',
-            'GD_Runner_Streaming_SF',
-            'CD_Runner_Skin_Blood_SF',
-            'CD_Runner_Skin_BlueDk_SF',
-            'CD_Runner_Skin_BlueLt_SF',
-            'CD_Runner_Skin_BlueScrp_SF',
-            'CD_Runner_Skin_Blue_SF',
-            'CD_Runner_Skin_CamoBlue_SF',
-            'CD_Runner_Skin_CamoGrey_SF',
-            'CD_Runner_Skin_CamoGrn_SF',
-            'CD_Runner_Skin_CamoTan_SF',
-            'CD_Runner_Skin_Default_SF',
-            'CD_Runner_Skin_DirtGrey_SF',
-            'CD_Runner_Skin_DirtGrng_SF',
-            'CD_Runner_Skin_DirtSpl_SF',
-            'CD_Runner_Skin_DirtStn_SF',
-            'CD_Runner_Skin_F_Burst_SF',
-            'CD_Runner_Skin_F_Char_SF',
-            'CD_Runner_Skin_F_Infern_SF',
-            'CD_Runner_Skin_F_Propan_SF',
-            'CD_Runner_Skin_Graffiti_SF',
-            'CD_Runner_Skin_GreenDk_SF',
-            'CD_Runner_Skin_GreenLt_SF',
-            'CD_Runner_Skin_GreenScrp_SF',
-            'CD_Runner_Skin_Green_SF',
-            'CD_Runner_Skin_GreyBlk_SF',
-            'CD_Runner_Skin_GreyDark_SF',
-            'CD_Runner_Skin_GreyLt_SF',
-            'CD_Runner_Skin_GreyWht_SF',
-            'CD_Runner_Skin_HexBlue_SF',
-            'CD_Runner_Skin_HexGrn_SF',
-            'CD_Runner_Skin_HexOrng_SF',
-            'CD_Runner_Skin_HexPrpl_SF',
-            'CD_Runner_Skin_M_Blue_SF',
-            'CD_Runner_Skin_M_Grey_SF',
-            'CD_Runner_Skin_M_Purple_SF',
-            'CD_Runner_Skin_M_White_SF',
-            'CD_Runner_Skin_OrangeDk_SF',
-            'CD_Runner_Skin_OrangeLt_SF',
-            'CD_Runner_Skin_Orange_SF',
-            'CD_Runner_Skin_Paint_SF',
-            'CD_Runner_Skin_PinkDark_SF',
-            'CD_Runner_Skin_PinkLt_SF',
-            'CD_Runner_Skin_Pink_SF',
-            'CD_Runner_Skin_PurpleDk_SF',
-            'CD_Runner_Skin_PurpleLt_SF',
-            'CD_Runner_Skin_Purple_SF',
-            'CD_Runner_Skin_RedDark_SF',
-            'CD_Runner_Skin_RedLt_SF',
-            'CD_Runner_Skin_RedScrp_SF',
-            'CD_Runner_Skin_Red_SF',
-            'CD_Runner_Skin_RingBlue_SF',
-            'CD_Runner_Skin_RingOrng_SF',
-            'CD_Runner_Skin_RingPrpl_SF',
-            'CD_Runner_Skin_RingRed_SF',
-            'CD_Runner_Skin_Rust_SF',
-            'CD_Runner_Skin_S_BluBlk_SF',
-            'CD_Runner_Skin_S_GrnBlk_SF',
-            'CD_Runner_Skin_S_RedBlk_SF',
-            'CD_Runner_Skin_S_YelBlk_SF',
-            'CD_Runner_Skin_TerqDark_SF',
-            'CD_Runner_Skin_TerqLt_SF',
-            'CD_Runner_Skin_Terq_SF',
-            'CD_Runner_Skin_WoodBrl_SF',
-            'CD_Runner_Skin_WoodEpic_SF',
-            'CD_Runner_Skin_WoodOak_SF',
-            'CD_Runner_Skin_WoodOld_SF',
-            'CD_Runner_Skin_YellowDk_SF',
-            'CD_Runner_Skin_YellowLt_SF',
-            'CD_Runner_Skin_YellowScrp_SF',
-            'CD_Runner_Skin_Yellow_SF',
-            'GD_BTech_Streaming_SF',
-            'CD_BanditTech_Skin_Blood_SF',
-            'CD_BanditTech_Skin_BlueBlk_SF',
-            'CD_BanditTech_Skin_BlueDk_SF',
-            'CD_BanditTech_Skin_BlueLt_SF',
-            'CD_BanditTech_Skin_Blue_SF',
-            'CD_BanditTech_Skin_CamoBlue_SF',
-            'CD_BanditTech_Skin_CamoGrey_SF',
-            'CD_BanditTech_Skin_CamoGrn_SF',
-            'CD_BanditTech_Skin_CamoTan_SF',
-            'CD_BanditTech_Skin_Default_SF',
-            'CD_BanditTech_Skin_DirtGrey_SF',
-            'CD_BanditTech_Skin_DirtGrng_SF',
-            'CD_BanditTech_Skin_DirtSpl_SF',
-            'CD_BanditTech_Skin_DirtStn_SF',
-            'CD_BanditTech_Skin_F_Burst_SF',
-            'CD_BanditTech_Skin_F_Char_SF',
-            'CD_BanditTech_Skin_F_Infern_SF',
-            'CD_BanditTech_Skin_F_Propan_SF',
-            'CD_BanditTech_Skin_Graffiti_SF',
-            'CD_BanditTech_Skin_GreenBlk_SF',
-            'CD_BanditTech_Skin_GreenDk_SF',
-            'CD_BanditTech_Skin_GreenLt_SF',
-            'CD_BanditTech_Skin_Green_SF',
-            'CD_BanditTech_Skin_GreyBlk_SF',
-            'CD_BanditTech_Skin_GreyDark_SF',
-            'CD_BanditTech_Skin_GreyLt_SF',
-            'CD_BanditTech_Skin_GreyWht_SF',
-            'CD_BanditTech_Skin_HexBlue_SF',
-            'CD_BanditTech_Skin_HexGrn_SF',
-            'CD_BanditTech_Skin_HexOrng_SF',
-            'CD_BanditTech_Skin_HexPrpl_SF',
-            'CD_BanditTech_Skin_M_Alien_SF',
-            'CD_BanditTech_Skin_M_Blue_SF',
-            'CD_BanditTech_Skin_M_Grey_SF',
-            'CD_BanditTech_Skin_M_White_SF',
-            'CD_BanditTech_Skin_OrangeDk_SF',
-            'CD_BanditTech_Skin_OrangeLt_SF',
-            'CD_BanditTech_Skin_Orange_SF',
-            'CD_BanditTech_Skin_Paint_SF',
-            'CD_BanditTech_Skin_PinkDark_SF',
-            'CD_BanditTech_Skin_PinkLt_SF',
-            'CD_BanditTech_Skin_Pink_SF',
-            'CD_BanditTech_Skin_PurpleDk_SF',
-            'CD_BanditTech_Skin_PurpleLt_SF',
-            'CD_BanditTech_Skin_Purple_SF',
-            'CD_BanditTech_Skin_RedBlk_SF',
-            'CD_BanditTech_Skin_RedDark_SF',
-            'CD_BanditTech_Skin_RedLt_SF',
-            'CD_BanditTech_Skin_Red_SF',
-            'CD_BanditTech_Skin_RingBlue_SF',
-            'CD_BanditTech_Skin_RingOrng_SF',
-            'CD_BanditTech_Skin_RingPrpl_SF',
-            'CD_BanditTech_Skin_RingRed_SF',
-            'CD_BanditTech_Skin_Rust_SF',
-            'CD_BanditTech_Skin_S_BluBlk_SF',
-            'CD_BanditTech_Skin_S_GrnBlk_SF',
-            'CD_BanditTech_Skin_S_RedBlk_SF',
-            'CD_BanditTech_Skin_S_YelBlk_SF',
-            'CD_BanditTech_Skin_TerqDark_SF',
-            'CD_BanditTech_Skin_TerqLt_SF',
-            'CD_BanditTech_Skin_Terq_SF',
-            'CD_BanditTech_Skin_WoodBrl_SF',
-            'CD_BanditTech_Skin_WoodEpic_SF',
-            'CD_BanditTech_Skin_WoodOak_SF',
-            'CD_BanditTech_Skin_WoodOld_SF',
-            'CD_BanditTech_Skin_YellowBk_SF',
-            'CD_BanditTech_Skin_YellowDk_SF',
-            'CD_BanditTech_Skin_YellowLt_SF',
-            'CD_BanditTech_Skin_Yellow_SF',
-            'GD_Orchid_Hovercraft_SF',
-            'GD_Orchid_HarpoonHovercraft_SF',
-            'GD_Orchid_RocketHovercraft_SF',
-            'GD_Orchid_SawHovercraft_SF',
-            'GD_Sage_FanBoat_SF',
-            'GD_Sage_CorrosiveFanBoat_SF',
-            'GD_Sage_IncendiaryFanBoat_SF',
-            'GD_Sage_ShockFanBoat_SF',
-            ]
 
     getall_files = []
 
@@ -444,6 +205,7 @@ class DataDumper(bl2sdk.BL2MOD):
         self.magic_commands[self.pkg_load_magic] = self.load_packages
         self.magic_commands[self.mainmenu_magic] = self.escape_to_main_menu
         self.magic_commands[self.exit_magic] = self.exit
+        self.magic_commands[self.map_magic] = self.open_map
 
         # Initialize our default mode
         self.cycleMode()
@@ -483,7 +245,7 @@ class DataDumper(bl2sdk.BL2MOD):
                 do_char_vehicle = (self.cur_mode == self.MODE_FWD)
 
                 # Loop through levels, then do chars/vehicles, then main menu, then quit!
-                for level in self.level_list:
+                for level in dumperdata.level_list:
                     self.add_open_level(level)
                     self.add_getall()
                 if do_char_vehicle:
@@ -505,13 +267,13 @@ class DataDumper(bl2sdk.BL2MOD):
 
                 # Lead off with a couple of random map loads, to further mix things up
                 self.add_user_feedback('Loading random map 1/2...')
-                self.add_open_level(random.choice(self.level_list), do_switch_to=False)
+                self.add_open_level(random.choice(dumperdata.level_list), do_switch_to=False)
                 self.add_user_feedback('Loading random map 2/2...')
-                self.add_open_level(random.choice(self.level_list), do_switch_to=False)
+                self.add_open_level(random.choice(dumperdata.level_list), do_switch_to=False)
 
                 # Then it's more or less just the same as FWD, but with some reversed
                 # loading orders
-                for level in reversed(self.level_list):
+                for level in reversed(dumperdata.level_list):
                     self.add_open_level(level)
                     self.add_getall()
                 if do_char_vehicle:
@@ -535,7 +297,7 @@ class DataDumper(bl2sdk.BL2MOD):
                 self.add_dumps('defaults')
 
                 # Loop through levels, then do chars/vehicles, then main menu, then quit!
-                for level in self.level_list:
+                for level in dumperdata.level_list:
                     self.add_open_level(level)
                     self.add_dumps(level)
                 if do_char_vehicle:
@@ -558,7 +320,7 @@ class DataDumper(bl2sdk.BL2MOD):
                 map_count = 3
                 for i in range(map_count):
                     self.add_user_feedback('Loading random map {}/{}...'.format(i+1, map_count))
-                    self.add_open_level(random.choice(self.level_list), do_switch_to=False)
+                    self.add_open_level(random.choice(dumperdata.level_list), do_switch_to=False)
 
             else:
 
@@ -594,6 +356,23 @@ class DataDumper(bl2sdk.BL2MOD):
             self.add_switch_to(levelname)
         self.command_list.append(('open {}'.format(levelname), self.map_change_delay))
 
+        ###
+        ### There's one Krieg-related object which cannot get dumped when we use `open`
+        ### to change levels, because its number suffix changes.  The number suffix does
+        ### *not* change during ordinary gameplay, or if we use a fancier method of
+        ### map-loading.  The fancier method ends up missing out on a handful of *other*
+        ### objects, though, so IMO it's not worth it to use it.  Just grab that one
+        ### Krieg object after the fact.
+        ###
+
+        ## If we have a pre-recorded list of level packages to load, load the level via
+        ## API rather than `open`.  If we don't have that list, though, go ahead and use
+        ## `open` for now.
+        #if levelname in dumperdata.level_pkgs:
+        #    self.command_list.append((self.map_magic, levelname))
+        #else:
+        #    self.command_list.append(('open {}'.format(levelname), self.map_change_delay))
+
     def add_getall(self):
         """
         Adds our full list of `getall` statements to our command list
@@ -626,9 +405,9 @@ class DataDumper(bl2sdk.BL2MOD):
         """
         self.add_user_feedback('Loading char and vehicle packages ("{}" to cancel)'.format(self.cancel_key))
         if reverse:
-            self.command_list.append((self.pkg_load_magic, reversed(self.char_vehicle_packages)))
+            self.command_list.append((self.pkg_load_magic, reversed(dumperdata.char_vehicle_packages)))
         else:
-            self.command_list.append((self.pkg_load_magic, self.char_vehicle_packages))
+            self.command_list.append((self.pkg_load_magic, dumperdata.char_vehicle_packages))
         self.add_switch_to('charvehicle')
 
     def add_main_menu(self):
@@ -705,6 +484,24 @@ class DataDumper(bl2sdk.BL2MOD):
         Exits the game
         """
         self.consoleCommand('exit')
+
+    def open_map(self, levelname):
+        """
+        Loads the specified map name
+        """
+        pc = bl2sdk.GetEngine().GamePlayers[0].Actor
+        maplist = dumperdata.level_pkgs[levelname]
+        maplist_len = len(maplist)
+        for idx, pkgname in enumerate(maplist):
+            bl2sdk.Log('Preparing map change for {}: {}, {}'.format(
+                pkgname,
+                idx == 0,
+                idx == (maplist_len - 1),
+                ))
+            pc.ClientPrepareMapChange(pkgname, idx == 0, idx == (maplist_len - 1))
+        #pc.ClientPrepareMapChange(levelname, True, True)
+        pc.ClientCommitMapChange()
+        self.setNextDelay(self.map_change_delay)
 
     def setNextDelay(self, delay):
         """
