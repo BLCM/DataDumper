@@ -26,6 +26,14 @@ import os
 import re
 import lzma
 import zipfile
+import argparse
+
+parser = argparse.ArgumentParser(description='Generate BLCMM OE Datafiles')
+parser.add_argument('-o', '--others',
+        action='store_true',
+        help='Also create an "Others" dataset',
+        )
+args = parser.parse_args()
 
 game = 'BL2'
 input_dir = 'categorized'
@@ -1796,6 +1804,20 @@ blcmm_org = {
             'WillowVendingMachineBlackMarket',
             ],
         }
+
+# Loop through and find all dump files, and construct an 'Others' datafile
+# based on all classes not explicitly categorized.
+if args.others:
+    all_classes = set()
+    for filename in os.listdir(input_dir):
+        if filename.endswith('.dump'):
+            all_classes.add(filename[:-5])
+        elif filename.endswith('.dump.xz'):
+            all_classes.add(filename[:-8])
+    for (cat_name, classes) in blcmm_org.items():
+        for classname in classes:
+            all_classes.remove(classname)
+    blcmm_org['Others'] = sorted(all_classes)
 
 if not os.path.isdir(output_dir):
     os.mkdir(output_dir)

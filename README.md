@@ -485,6 +485,11 @@ the `categorized` folder still available, and the `generate_blcmm_data.py`
 script already run.  My first runthrough of this process generated the following:
 https://drive.google.com/open?id=1vLBRgs-UkYfOmStP6D3KjjcYbOvMunvX
 
+If you want `generate_blcmm_data.py` to also generate a `BLCMM_Data_BL2_Others.jar`
+datafile, which contains all classes dumped by the process which aren't already
+inside an existing BLCMM OE datafile, specify `-o` or `--others` when running
+the script.
+
 FT/BLCMM Explorer Integration
 -----------------------------
 
