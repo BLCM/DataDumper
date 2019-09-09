@@ -17,17 +17,15 @@ BL2/TPS engines, having access to engine functions directly.  It also
 uses a few external [Python](https://www.python.org/) scripts to massage
 the data and get it into a usable format.
 
-Note that currently this process has *only* been tested in Borderlands 2,
-though the same process should work fine on The Pre-Sequel.  There are
-various places in the utilities which would have to be updated to work
-with TPS, though.
+Many of the notes in here are BL2-focused, but the mod works fine for
+dumping TPS data as well.
 
 The "Short" Version
 -------------------
 
 If you're familiar with Python, and already have PythonSDK running, here's
 a "brief" step-by-step process of how to get your own full data dumps
-from BL2.
+from BL2/TPS.
 
 When running scripts manually, you will doubtless have to change some file
 paths in these utilities, since those are hardcoded in there.  For instance,
@@ -146,7 +144,7 @@ to not exist if you try to dump it in the same session.
 12. Run `compare_blcmm_data.py` to generate a list of how the new data
     files compare to your existing files, just to spot-check the data.
 
-Steps 1 and 2 should take about two hours each, and generate about a 6GB
+For BL2, steps 1 and 2 should take about two hours each, and generate about a 6GB
 logfile each.  Step 4 should take about 90 minutes, and generate another
 6GB file.  While processing, you'll want another 8GB or so free space
 beyond that, to allow for processing.  So make sure you've got at least
@@ -154,6 +152,14 @@ beyond that, to allow for processing.  So make sure you've got at least
 requirement by removing some files as you go, of course -- once you've
 done step 4, you don't actually need the files from steps 1 or 2 anymore,
 for instance.
+
+For TPS, steps 1 and 2 should take a little under an hour each, and generate
+logfiles a bit less than 3GB each.  Step 4 should take about 45 minutes, and
+generate a file that's a little over 3GB.  While processing, you'll want
+another 5GB or so free space beyond that, to allow for processing.  So make
+sure you've got at least 14GB free on your HD before starting this off.  As
+with BL2, you could decrease the requirement by removing some unnecessary
+files as you go.
 
 ### Newer Dumping Style, with Manual Character/Vehicle Dumps
 
@@ -180,6 +186,27 @@ default modes expect, is the following:
   a pair of Bandit Technicals, and then a pair of Runners.
 - Zer0, stationed anywhere
 - Krieg, stationed anywhere
+
+For TPS, here's the characters that I'd used:
+
+- Nisha, level 70, who will do the bulk of the automated dumping.  Starting
+  map location is irrelevant.  She should have gone through the *entire* game
+  content, including Claptastic Voyage, so no cutscenes are triggered when
+  hopping around.  Doesn't actually *have* to be level 70, but if she's
+  overlevelled (and you start the game in Normal), she won't be under threat
+  if enemies end up attacking in the middle of the dumps.
+- Claptrap, stationed somewhere with a handy Moon Zoomy station (Triton Flats,
+  Serenity's Waste, Outlands Canyon (ish, have to jump)).  He will be the
+  one to spawn a pair of Moon Buggies.  Maybe swap maps inbetween runs so
+  that there are fewer object duplicates.
+- Wilhelm, stationed somewhere with a handy Moon Zoomy station.  He will be
+  the one to spawn the Flak Stingray.  Again, maybe swap maps inbetween
+  runs so that there are fewer object duplicates.
+- Jack, stationed somewhere with a handy Moon Zoomy station.  He will be the
+  one to spawn the Cryo Stingray.  Again, maybe swap maps inbetween runs
+  so that there are fewer object duplicates.
+- Athena, stationed anywhere
+- Aurelia, stationed anywhere
 
 You can, of course, use your own combinations of characters + locations, but
 that setup will match the labels which DataDumper provides via its modes.
@@ -449,14 +476,15 @@ This may not be exhaustive -- these are just the locations I've found so far.
 - Your hostname can be found in:
   - `WorldInfo'Loader.TheWorld:PersistentLevel.WorldInfo_1'`
 - Your Steam username can be found in:
-  - `WillowPlayerReplicationInfo'Loader.TheWorld:PersistentLevel.WillowPlayerReplicationInfo_44'`
+  - `WillowPlayerReplicationInfo'Loader.TheWorld:PersistentLevel.WillowPlayerReplicationInfo_44'` *(bl2 only)*
   - `OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'`
-  - `UIDataStore_OnlinePlayerData'Transient.DataStoreClient_0:UIDataStore_OnlinePlayerData_42'`
+  - `UIDataStore_OnlinePlayerData'Transient.DataStoreClient_0:UIDataStore_OnlinePlayerData_42'` *(bl2 only)*
   - `WillowGameViewportClient'Transient.WillowGameEngine_0:WillowGameViewportClient_0'`
   - `WillowOnlineGameSettings'Transient.WillowOnlineGameSettings_0'`
 - Your 17-digit Steam user ID can be found in:
   - `GearboxAccountData'Transient.GearboxAccountData_1'`
   - `OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'`
+  - `WillowSaveGameManager'Transient.WillowSaveGameManager_0'` *(tps only)*
 - Your console history can be found in:
   - `WillowConsole'Transient.WillowGameEngine_0:WillowGameViewportClient_0.WillowConsole_0'`
 

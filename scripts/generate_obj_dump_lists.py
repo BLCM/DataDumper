@@ -26,7 +26,27 @@ import tempfile
 
 filename_fwd = 'Launch.log-all_object_names_fwd'
 filename_rev = 'Launch.log-all_object_names_rev'
-output_dir = '/usr/local/games/Steam/SteamApps/common/Borderlands 2/Binaries/datadumper'
+output_dirs = {
+        'BL2': '/usr/local/games/Steam/SteamApps/common/Borderlands 2/Binaries/datadumper',
+        'TPS': '/usr/local/games/Steam/SteamApps/common/BorderlandsPreSequel/Binaries/datadumper',
+        }
+with open(filename_fwd) as df:
+    line_num = 0
+    for line in df:
+        if line.startswith('Log: Version: '):
+            version = int(line.strip()[len('Log: Version: '):])
+            if version == 8638:
+                game = 'BL2'
+            elif version == 8630:
+                game = 'TPS'
+            else:
+                raise Exception('Unknown engine version found in logfile: {}'.format(version))
+            break
+        line_num += 1
+        if line_num > 5:
+            raise Exception('Could not find engine version number!')
+output_dir = output_dirs[game]
+print('Found {}, writing to {}'.format(game, output_dir))
 
 # 800 feels absurdly low to me, but 1k was too much for the objects that
 # happened to get dumped in Caustic Caverns.  When I was doing some more

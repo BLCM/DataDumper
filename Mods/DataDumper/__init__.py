@@ -27,7 +27,7 @@ from . import dumperdata
 class DataDumper(bl2sdk.BL2MOD):
 
     Name = "Data Dumper"
-    Description = "Dumps data from BL2, for use in BLCMM OE resource files"
+    Description = "Dumps data, for use in BLCMM OE resource files"
     Author = 'apocalyptech'
 
     dd_input_name = 'Run Dumps'
@@ -89,7 +89,66 @@ class DataDumper(bl2sdk.BL2MOD):
             MODE_DUMP_ZERO,
             MODE_DUMP_KRIEG,
             MODE_RANDOM_MAPS,
-            ) = range(23)
+            # Extra TPS modes
+            MODE_CLAPTRAP_BUGGY,
+            MODE_WILHELM_STINGRAY_FLAK,
+            MODE_JACK_STINGRAY_CRYO,
+            MODE_ATHENA,
+            MODE_AURELIA,
+            MODE_DUMP_CLAPTRAP_BUGGY,
+            MODE_DUMP_WILHELM_STINGRAY_FLAK,
+            MODE_DUMP_JACK_STINGRAY_CRYO,
+            MODE_DUMP_ATHENA,
+            MODE_DUMP_AURELIA,
+            ) = range(33)
+
+    MODELIST = []
+    MODES = {
+            'BL2': [
+                MODE_FWD,
+                MODE_FWD_WITHOUT_CHAR,
+                MODE_REV,
+                MODE_REV_WITHOUT_CHAR,
+                MODE_AXTON_SKIFF1,
+                MODE_AXTON_SKIFF2,
+                MODE_MAYA_FAN1,
+                MODE_MAYA_FAN2,
+                MODE_GAIGE_BTECH,
+                MODE_GAIGE_RUNNER,
+                MODE_ZERO,
+                MODE_KRIEG,
+                MODE_DUMP,
+                MODE_DUMP_WITHOUT_CHAR,
+                MODE_DUMP_AXTON_SKIFF1,
+                MODE_DUMP_AXTON_SKIFF2,
+                MODE_DUMP_MAYA_FAN1,
+                MODE_DUMP_MAYA_FAN2,
+                MODE_DUMP_GAIGE_BTECH,
+                MODE_DUMP_GAIGE_RUNNER,
+                MODE_DUMP_ZERO,
+                MODE_DUMP_KRIEG,
+                MODE_RANDOM_MAPS,
+                ],
+            'TPS': [
+                MODE_FWD,
+                MODE_FWD_WITHOUT_CHAR,
+                MODE_REV,
+                MODE_REV_WITHOUT_CHAR,
+                MODE_CLAPTRAP_BUGGY,
+                MODE_WILHELM_STINGRAY_FLAK,
+                MODE_JACK_STINGRAY_CRYO,
+                MODE_ATHENA,
+                MODE_AURELIA,
+                MODE_DUMP,
+                MODE_DUMP_WITHOUT_CHAR,
+                MODE_DUMP_CLAPTRAP_BUGGY,
+                MODE_DUMP_WILHELM_STINGRAY_FLAK,
+                MODE_DUMP_JACK_STINGRAY_CRYO,
+                MODE_DUMP_ATHENA,
+                MODE_DUMP_AURELIA,
+                MODE_RANDOM_MAPS,
+                ],
+            }
 
     (TYPE_GETALL,
             TYPE_DUMP) = range(2)
@@ -118,10 +177,22 @@ class DataDumper(bl2sdk.BL2MOD):
             MODE_DUMP_ZERO: ('Zer0 Dump', 'zero', TYPE_DUMP),
             MODE_DUMP_KRIEG: ('Krieg Dump', 'krieg', TYPE_DUMP),
             MODE_RANDOM_MAPS: ('Random Maps', None, None),
+            # Additional TPS modes
+            MODE_CLAPTRAP_BUGGY: ('Claptrap + Buggy Getall', 'claptrap', TYPE_GETALL),
+            MODE_WILHELM_STINGRAY_FLAK: ('Wilhelm + Flak Stingray Getall', 'wilhelm', TYPE_GETALL),
+            MODE_JACK_STINGRAY_CRYO: ('Jack + Cryo Stingray Getall', 'jack', TYPE_GETALL),
+            MODE_ATHENA: ('Athena Getall', 'athena', TYPE_GETALL),
+            MODE_AURELIA: ('Aurelia Getall', 'aurelia', TYPE_GETALL),
+            MODE_DUMP_CLAPTRAP_BUGGY: ('Claptrap + Buggy Dump', 'claptrap', TYPE_DUMP),
+            MODE_DUMP_WILHELM_STINGRAY_FLAK: ('Wilhelm + Flak Stingray Dump', 'wilhelm', TYPE_DUMP),
+            MODE_DUMP_JACK_STINGRAY_CRYO: ('Jack + Cryo Stingray Dump', 'jack', TYPE_DUMP),
+            MODE_DUMP_ATHENA: ('Athena Dump', 'athena', TYPE_DUMP),
+            MODE_DUMP_AURELIA: ('Aurelia Dump', 'aurelia', TYPE_DUMP),
             }
 
     getall_files = []
 
+    cur_mode_idx = -1
     cur_mode = -1
     cur_command_idx = -1
     command_list = []
@@ -143,6 +214,18 @@ class DataDumper(bl2sdk.BL2MOD):
                     self.elapsed_time = 0
                     self.modeStep()
             return True
+
+        # Find out what game we're running in.  This is technically a bit fragile, since
+        # theoretically the game(s) could get updated at some point with new engine
+        # versions, though that seems unlikely.
+        engine_version = bl2sdk.GetEngine().GetEngineVersion()
+        if engine_version == 8638:
+            self.game = 'BL2'
+        elif engine_version == 8630:
+            self.game = 'TPS'
+        else:
+            raise Exception('Unknown game engine version: {}'.format(engine_version))
+        self.MODELIST = self.MODES[self.game]
 
         # Get a list of all classes
         self.classes = []
@@ -234,9 +317,10 @@ class DataDumper(bl2sdk.BL2MOD):
         if not self.running:
 
             if backwards:
-                self.cur_mode = (self.cur_mode - 1) % len(self.MODE_ENG)
+                self.cur_mode_idx = (self.cur_mode_idx - 1) % len(self.MODELIST)
             else:
-                self.cur_mode = (self.cur_mode + 1) % len(self.MODE_ENG)
+                self.cur_mode_idx = (self.cur_mode_idx + 1) % len(self.MODELIST)
+            self.cur_mode = self.MODELIST[self.cur_mode_idx]
             self.cur_command_idx = -1
             self.command_list = []
 
@@ -245,7 +329,7 @@ class DataDumper(bl2sdk.BL2MOD):
                 do_char_vehicle = (self.cur_mode == self.MODE_FWD)
 
                 # Loop through levels, then do chars/vehicles, then main menu, then quit!
-                for level in dumperdata.level_list:
+                for level in dumperdata.level_list[self.game]:
                     self.add_open_level(level)
                     self.add_getall()
                 if do_char_vehicle:
@@ -267,13 +351,13 @@ class DataDumper(bl2sdk.BL2MOD):
 
                 # Lead off with a couple of random map loads, to further mix things up
                 self.add_user_feedback('Loading random map 1/2...')
-                self.add_open_level(random.choice(dumperdata.level_list), do_switch_to=False)
+                self.add_open_level(random.choice(dumperdata.level_list[self.game]), do_switch_to=False)
                 self.add_user_feedback('Loading random map 2/2...')
-                self.add_open_level(random.choice(dumperdata.level_list), do_switch_to=False)
+                self.add_open_level(random.choice(dumperdata.level_list[self.game]), do_switch_to=False)
 
                 # Then it's more or less just the same as FWD, but with some reversed
                 # loading orders
-                for level in reversed(dumperdata.level_list):
+                for level in reversed(dumperdata.level_list[self.game]):
                     self.add_open_level(level)
                     self.add_getall()
                 if do_char_vehicle:
@@ -297,7 +381,7 @@ class DataDumper(bl2sdk.BL2MOD):
                 self.add_dumps('defaults')
 
                 # Loop through levels, then do chars/vehicles, then main menu, then quit!
-                for level in dumperdata.level_list:
+                for level in dumperdata.level_list[self.game]:
                     self.add_open_level(level)
                     self.add_dumps(level)
                 if do_char_vehicle:
@@ -320,7 +404,7 @@ class DataDumper(bl2sdk.BL2MOD):
                 map_count = 3
                 for i in range(map_count):
                     self.add_user_feedback('Loading random map {}/{}...'.format(i+1, map_count))
-                    self.add_open_level(random.choice(dumperdata.level_list), do_switch_to=False)
+                    self.add_open_level(random.choice(dumperdata.level_list[self.game]), do_switch_to=False)
 
             else:
 
@@ -334,7 +418,7 @@ class DataDumper(bl2sdk.BL2MOD):
 
             # Report to the user
             self.say('Switched to mode {}: {} - hit "{}" to start, or "{}/{}" to change modes.'.format(
-                self.cur_mode + 1,
+                self.cur_mode_idx + 1,
                 self.MODE_ENG[self.cur_mode][0],
                 self.dd_key,
                 self.mode_key,
@@ -368,7 +452,7 @@ class DataDumper(bl2sdk.BL2MOD):
         ## If we have a pre-recorded list of level packages to load, load the level via
         ## API rather than `open`.  If we don't have that list, though, go ahead and use
         ## `open` for now.
-        #if levelname in dumperdata.level_pkgs:
+        #if levelname in dumperdata.level_pkgs[self.game]:
         #    self.command_list.append((self.map_magic, levelname))
         #else:
         #    self.command_list.append(('open {}'.format(levelname), self.map_change_delay))
@@ -405,9 +489,9 @@ class DataDumper(bl2sdk.BL2MOD):
         """
         self.add_user_feedback('Loading char and vehicle packages ("{}" to cancel)'.format(self.cancel_key))
         if reverse:
-            self.command_list.append((self.pkg_load_magic, reversed(dumperdata.char_vehicle_packages)))
+            self.command_list.append((self.pkg_load_magic, reversed(dumperdata.char_vehicle_packages[self.game])))
         else:
-            self.command_list.append((self.pkg_load_magic, dumperdata.char_vehicle_packages))
+            self.command_list.append((self.pkg_load_magic, dumperdata.char_vehicle_packages[self.game]))
         self.add_switch_to('charvehicle')
 
     def add_main_menu(self):
@@ -490,7 +574,7 @@ class DataDumper(bl2sdk.BL2MOD):
         Loads the specified map name
         """
         pc = bl2sdk.GetEngine().GamePlayers[0].Actor
-        maplist = dumperdata.level_pkgs[levelname]
+        maplist = dumperdata.level_pkgs[self.game][levelname]
         maplist_len = len(maplist)
         for idx, pkgname in enumerate(maplist):
             bl2sdk.Log('Preparing map change for {}: {}, {}'.format(

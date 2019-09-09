@@ -46,6 +46,8 @@ print('ever gives this a run, please contact me to let me know how it runs - ')
 print('http://apocalyptech.com/contact.php')
 print('')
 
+prefix_len = 15
+
 print('Processing...')
 if not os.path.isdir(output_dir):
     os.mkdir(output_dir)
@@ -58,7 +60,13 @@ with open(dump_file, 'r', encoding='latin1') as df:
 
     for line in df:
 
-        line_without_log = line[15:]
+        # If we had a dump that took long enough, we could get into a five-digit
+        # second, which throws off our prefix.  This can happen if you leave an
+        # automated dump to run overnight and then do manual char/vehicle sections
+        # in the morning, or something.
+        if prefix_len == 15 and len(line) > 9 and line[9] == ']':
+            prefix_len = 16
+        line_without_log = line[prefix_len:]
 
         match = dump_start_re.match(line_without_log)
         if match:
