@@ -264,6 +264,29 @@ ground level.
 9. Run `compare_blcmm_data.py` to generate a list of how the new data
    files compare to your existing files, just to spot-check the data.
 
+### No-pruning variant
+
+If you're looking for a set of data dumps which does *not* prune objects using
+the double-pass `getall` like the methods above, you can use
+`generate_unfiltered_obj_dump_lists.py` instead of `generate_obj_dump_lists.py`,
+which will *only* look at the forward-collected `getall` results.  So you'd
+skip step 2 from either of the methods above.
+
+Keep in mind that the resulting dump files will include plenty of objects which
+can't actaully be used for modding purposes, since the names are dynamic, but
+it may be useful to at least get a feel for how the dynamically-named objects
+are doing their things.
+
+Note that this method is not super well optimized...  There's really no reason
+to even have a separate `getall` phase if doing this, and in fact having a
+separate `getall` phase might even be detrimental, since some dynamically-named
+objects might get renamed before the `obj dump` phase happens.  At the moment
+I've not taken the time to try and figure that out, though.  The app could
+probably run the `getall`s, do a manual `flushlog`, wait a few seconds, and
+then loop through the logfile itself looking for object names (remembering the
+size of the logfile inbetween sections, so it can `seek` past data it's already
+parsed).
+
 General Method Outline
 ----------------------
 
