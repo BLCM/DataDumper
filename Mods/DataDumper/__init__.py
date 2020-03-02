@@ -21,10 +21,10 @@
 import os
 import math
 import random
-import bl2sdk
+import unrealsdk
 from . import dumperdata
 
-class DataDumper(bl2sdk.BL2MOD):
+class DataDumper(unrealsdk.BL2MOD):
 
     Name = "Data Dumper"
     Description = "Dumps data, for use in BLCMM OE resource files"
@@ -41,6 +41,13 @@ class DataDumper(bl2sdk.BL2MOD):
 
     mode_rev_input_name = 'Cycle Mode Backwards'
     mode_rev_key = 'P'
+
+    Keybinds = [
+            (dd_input_name, dd_key),
+            (mode_input_name, mode_key),
+            (mode_rev_input_name, mode_rev_key),
+            (cancel_input_name, cancel_key),
+            ]
 
     tick_func_name = 'WillowGame.WillowGameViewportClient.Tick'
     tick_hook_name = 'TickHook'
@@ -203,7 +210,7 @@ class DataDumper(bl2sdk.BL2MOD):
     def Enable(self):
 
         # We need to have a non-class function to call
-        def staticDoApocTick(caller: bl2sdk.UObject, function: bl2sdk.UFunction, params: bl2sdk.FStruct) -> bool:
+        def staticDoApocTick(caller: unrealsdk.UObject, function: unrealsdk.UFunction, params: unrealsdk.FStruct) -> bool:
             """
             Processes a UE tick, and activates our next modeStep if we need to
             """
@@ -218,10 +225,10 @@ class DataDumper(bl2sdk.BL2MOD):
         # Find out what game we're running in.  This is technically a bit fragile, since
         # theoretically the game(s) could get updated at some point with new engine
         # versions, though that seems unlikely.
-        engine_version = bl2sdk.GetEngine().GetEngineVersion()
-        if engine_version == 8638:
+        engine_version = unrealsdk.GetEngine().GetEngineVersion()
+        if engine_version == 8638 or engine_version == 8639:
             self.game = 'BL2'
-        elif engine_version == 8630:
+        elif engine_version == 8630 or engine_version == 8631:
             self.game = 'TPS'
         else:
             raise Exception('Unknown game engine version: {}'.format(engine_version))
@@ -229,7 +236,7 @@ class DataDumper(bl2sdk.BL2MOD):
 
         # Get a list of all classes
         self.classes = []
-        for obj in bl2sdk.UObject.FindAll('Class'):
+        for obj in unrealsdk.UObject.FindAll('Class'):
             if obj.Name != 'Field' and obj.Name != 'Object':
                 self.classes.append(obj.Name)
         self.classes.sort()
@@ -251,7 +258,7 @@ class DataDumper(bl2sdk.BL2MOD):
         iterations = math.ceil(len(self.classes) / self.max_getall_per_run)
         for i in range(iterations):
             getall_file = 'getall.{}'.format(i)
-            bl2sdk.Log('Writing exec file "{}"'.format(getall_file))
+            unrealsdk.Log('Writing exec file "{}"'.format(getall_file))
             self.getall_files.append('{}/{}'.format(self.exec_file_dir, getall_file))
             with open(os.path.join(full_exec_file_dir, getall_file), 'w') as df:
                 for class_idx in range(
@@ -267,7 +274,7 @@ class DataDumper(bl2sdk.BL2MOD):
         iterations = math.ceil(len(self.classes) / self.max_objdump_per_run)
         for i in range(iterations):
             defaults_filename = 'defaults.{:03d}'.format(i)
-            bl2sdk.Log('Writing defaults file "{}"...'.format(defaults_filename))
+            unrealsdk.Log('Writing defaults file "{}"...'.format(defaults_filename))
             with open(os.path.join(full_exec_file_dir, defaults_filename), 'w') as df:
                 for classname in self.classes[self.max_objdump_per_run*i:min(len(self.classes), self.max_objdump_per_run*i+self.max_objdump_per_run)]:
                     if classname != 'Class':
@@ -294,20 +301,12 @@ class DataDumper(bl2sdk.BL2MOD):
         self.cycleMode()
 
         # Set up hooks
-        self.RegisterGameInput(self.dd_input_name, self.dd_key)
-        self.RegisterGameInput(self.mode_input_name, self.mode_key)
-        self.RegisterGameInput(self.mode_rev_input_name, self.mode_rev_key)
-        self.RegisterGameInput(self.cancel_input_name, self.cancel_key)
-        bl2sdk.RegisterHook(self.tick_func_name, self.tick_hook_name, staticDoApocTick)
+        unrealsdk.RegisterHook(self.tick_func_name, self.tick_hook_name, staticDoApocTick)
 
     def Disable(self):
 
         # Get rid of hooks
-        self.UnregisterGameInput(self.dd_input_name)
-        self.UnregisterGameInput(self.mode_input_name)
-        self.UnregisterGameInput(self.mode_rev_input_name)
-        self.UnregisterGameInput(self.cancel_input_name)
-        bl2sdk.RemoveHook(self.tick_func_name, self.tick_hook_name)
+        unrealsdk.RemoveHook(self.tick_func_name, self.tick_hook_name)
 
     def cycleMode(self, backwards=False):
         """
@@ -552,14 +551,14 @@ class DataDumper(bl2sdk.BL2MOD):
         Load the specified packages, then wait for the given delay
         """
         for pkg in packages:
-            bl2sdk.LoadPackage(pkg)
+            unrealsdk.LoadPackage(pkg)
         self.setNextDelay(self.pkgload_delay)
 
     def escape_to_main_menu(self, junk):
         """
         Escape out to the main menu
         """
-        pc = bl2sdk.GetEngine().GamePlayers[0].Actor
+        pc = unrealsdk.GetEngine().GamePlayers[0].Actor
         pc.ReturnToTitleScreen(False, False)
         self.setNextDelay(self.mainmenu_delay)
 
@@ -573,11 +572,11 @@ class DataDumper(bl2sdk.BL2MOD):
         """
         Loads the specified map name
         """
-        pc = bl2sdk.GetEngine().GamePlayers[0].Actor
+        pc = unrealsdk.GetEngine().GamePlayers[0].Actor
         maplist = dumperdata.level_pkgs[self.game][levelname]
         maplist_len = len(maplist)
         for idx, pkgname in enumerate(maplist):
-            bl2sdk.Log('Preparing map change for {}: {}, {}'.format(
+            unrealsdk.Log('Preparing map change for {}: {}, {}'.format(
                 pkgname,
                 idx == 0,
                 idx == (maplist_len - 1),
@@ -627,7 +626,7 @@ class DataDumper(bl2sdk.BL2MOD):
             # maps before the engine runs out of virtual memory and crashes,
             # without specifying `True` here.  Presumably an unintended side
             # effect, but something to keep in mind.
-            pc = bl2sdk.GetEngine().GamePlayers[0].Actor
+            pc = unrealsdk.GetEngine().GamePlayers[0].Actor
             pc.ConsoleCommand(command, True)
         except:
             pass
@@ -645,4 +644,4 @@ class DataDumper(bl2sdk.BL2MOD):
         elif input_obj.Name == self.cancel_input_name:
             self.cancelCycle()
 
-bl2sdk.Mods.append(DataDumper())
+unrealsdk.Mods.append(DataDumper())
