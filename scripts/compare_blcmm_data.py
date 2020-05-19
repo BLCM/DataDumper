@@ -28,6 +28,10 @@ parser.add_argument('-i', '--ignoretransient',
         action='store_true',
         help='Ignore Transient.* objects',
         )
+parser.add_argument('-d', '--ignoredefault',
+        action='store_true',
+        help='Ignore Default__* objects',
+        )
 args = parser.parse_args()
 
 output_dir = 'comparisons'
@@ -38,7 +42,8 @@ for filename in os.listdir(data_dir):
     if filename.startswith('Oz'):
         game = 'TPS'
         break
-stock_files_dir = '/home/pez/.local/share/BLCMM/data/{}/bak'.format(game)
+#stock_files_dir = '/home/pez/.local/share/BLCMM/data/{}/bak'.format(game)
+stock_files_dir = '/home/pez/git/b2patching/blcmm/BLCMM/data/{}'.format(game)
 
 if not os.path.isdir(output_dir):
     os.mkdir(output_dir)
@@ -66,17 +71,23 @@ for filename in os.listdir(stock_files_dir):
                             wrapped = io.TextIOWrapper(df)
                             for line in wrapped:
                                 obj_name = line.strip().split(' ', 1)[1]
-                                if not args.ignoretransient or not obj_name.lower().startswith('transient.'):
-                                    blcmm_objects.add(obj_name.lower())
-                                    lower_to_upper[obj_name.lower()] = obj_name
+                                if args.ignoretransient and obj_name.lower().startswith('transient.'):
+                                    continue
+                                if args.ignoredefault and '.default__' in obj_name.lower():
+                                    continue
+                                blcmm_objects.add(obj_name.lower())
+                                lower_to_upper[obj_name.lower()] = obj_name
 
                         # Get our own list of objects for the given class
                         with open(os.path.join(data_dir, '{}.dict'.format(class_name))) as df:
                             for line in df:
                                 obj_name = line.strip().split(' ', 1)[1]
-                                if not args.ignoretransient or not obj_name.lower().startswith('transient.'):
-                                    our_objects.add(obj_name.lower())
-                                    lower_to_upper[obj_name.lower()] = obj_name
+                                if args.ignoretransient and obj_name.lower().startswith('transient.'):
+                                    continue
+                                if args.ignoredefault and '.default__' in obj_name.lower():
+                                    continue
+                                our_objects.add(obj_name.lower())
+                                lower_to_upper[obj_name.lower()] = obj_name
 
                         # Report!
                         only_in_blcmm = blcmm_objects - our_objects
