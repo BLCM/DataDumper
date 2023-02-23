@@ -79,10 +79,14 @@ with open(dump_file, 'r', encoding='latin1') as df:
                 cur_type = None
                 cur_name = None
                 cur_fh = None
+            elif 'Default__' in cur_name and ':' not in cur_name:
+                cur_type = None
+                cur_name = None
+                cur_fh = None
             else:
                 seen_objects.add(cur_name)
                 if cur_type not in filehandles:
-                    filehandles[cur_type] = open(os.path.join(output_dir, '{}.dump'.format(cur_type)), 'w', encoding='latin1')
+                    filehandles[cur_type] = open(os.path.join(output_dir, '{}.dump'.format(cur_type)), 'w', encoding='latin1', newline="\r\n")
                 cur_fh = filehandles[cur_type]
 
         if 'Log file open' in line or 'ExecWarning' in line or 'Closing by request' in line:

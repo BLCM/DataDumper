@@ -18,8 +18,10 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+from Mods.ModMenu.ModObjects import Game
+
 level_list = {
-        'BL2': [
+        Game.BL2: [
             'Stockade_P',
             'Fyrestone_P',
             'DamTop_P',
@@ -102,7 +104,19 @@ level_list = {
             'Distillery_P',
             'Easter_P',
             ],
-        'TPS': [
+        Game.AoDK: [
+            'Dark_Forest_P',
+            'CastleKeep_P',
+            'Village_P',
+            'CastleExterior_P',
+            'Dead_Forest_P',
+            'Dungeon_P',
+            'Mines_P',
+            'TempleSlaughter_P',
+            'Docks_P',
+            'DungeonRaid_P',
+            ],
+        Game.TPS: [
             'MoonSlaughter_P',
             'Spaceport_P',
             'ComFacility_P',
@@ -144,7 +158,7 @@ level_list = {
 # now I'd just used FT/BLCMM Explorer's data API to generate it.  Which
 # is a bit circular...
 level_pkgs = {
-        'BL2': {
+        Game.BL2: {
             'Sage_PowerStation_P': [
                     'Sage_PowerStation_P',
                     'Sage_PowerStation_Light',
@@ -957,7 +971,103 @@ level_pkgs = {
                     'Orchid_SaltFlats_Dynamic',
                 ],
             },
-        'TPS': {
+        Game.AoDK: {
+            'Dark_Forest_P': [
+                    'Dark_Forest_P',
+                    'Dark_Forest_Missions',
+                    'Dark_Forest_Light',
+                    'Dark_Forest_Audio',
+                    'Dark_Forest_Combat',
+                    'Dark_Forest_Dynamic',
+                    'Dark_Forest_FX',
+                    'Dark_Forest_Skybox',
+                ],
+            'CastleKeep_P': [
+                    'CastleKeep_P',
+                    'CastleKeep_Mission',
+                    'CastleKeep_Dynamic',
+                    'CastleKeep_FX',
+                    'CastleKeep_Light',
+                    'CastleKeep_Skybox',
+                    'CastleKeep_Audio',
+                    'CastleKeep_Combat',
+                ],
+            'Village_P': [
+                    'Village_P',
+                    'Village_Light',
+                    'Village_Audio',
+                    'Village_Dynamic',
+                    'Village_FX',
+                    'Village_Mission',
+                    'Village_Skybox',
+                ],
+            'CastleExterior_P': [
+                    'CastleExterior_P',
+                    'CastleExterior_Audio',
+                    'CastleExterior_Light',
+                    'CastleExterior_Dynamic',
+                    'CastleExterior_FX',
+                    'CastleExterior_Mission',
+                    'CastleExterior_Skybox',
+                    'CastleExterior_Combat',
+                ],
+            'Dead_Forest_P': [
+                    'Dead_Forest_P',
+                    'Dead_Forest_Light',
+                    'Dead_Forest_Audio',
+                    'Dead_Forest_Combat',
+                    'Dead_Forest_Dynamic',
+                    'Dead_Forest_FX',
+                    'Dead_Forest_Skybox',
+                    'Dead_Forest_Mission',
+                ],
+            'Dungeon_P': [
+                    'Dungeon_P',
+                    'Dungeon_Light',
+                    'Dungeon_FX',
+                    'Dungeon_Skybox',
+                    'Dungeon_Dynamic',
+                    'Dungeon_Combat',
+                    'Dungeon_Audio',
+                    'Dungeon_Mission',
+                ],
+            'Mines_P': [
+                    'Mines_P',
+                    'Mines_Mission',
+                    'Mines_Audio',
+                    'Mines_Combat',
+                    'Mines_Dynamic',
+                    'Mines_FX',
+                    'Mines_Light',
+                    'Mines_Skybox',
+                ],
+            'TempleSlaughter_P': [
+                    'TempleSlaughter_P',
+                    'TempleSlaughter_Light',
+                    'TempleSlaughter_Audio',
+                    'TempleSlaughter_Combat',
+                ],
+            'Docks_P': [
+                    'Docks_P',
+                    'DOCKS_LIGHT',
+                    'Docks_Audio',
+                    'Docks_Combat',
+                    'Docks_Dynamic',
+                    'Docks_FX',
+                    'Docks_Skybox',
+                    'Docks_Mission',
+                ],
+            'DungeonRaid_P': [
+                    'DungeonRaid_P',
+                    'DungeonRaid_Audio',
+                    'DungeonRaid_Combat',
+                    'DungeonRaid_Dynamic',
+                    'DungeonRaid_FX',
+                    'DungeonRaid_Light',
+                    'DungeonRaid_Skybox',
+                ],
+            },
+        Game.TPS: {
             'MoonSlaughter_P': [
                     'MoonSlaughter_P',
                     'MoonSlaughter_Sky',
@@ -1279,7 +1389,7 @@ level_pkgs = {
     }
 
 char_vehicle_packages = {
-        'BL2': [
+        Game.BL2: [
             'GD_Assassin_Streaming_SF',
             'GD_Mercenary_Streaming_SF',
             'GD_Siren_Streaming_SF',
@@ -1435,7 +1545,9 @@ char_vehicle_packages = {
             'GD_Sage_IncendiaryFanBoat_SF',
             'GD_Sage_ShockFanBoat_SF',
             ],
-        'TPS': [
+        Game.AoDK: [
+            ],
+        Game.TPS: [
             # These haven't really been vetted out, since I'm not longer actually
             # using this method for my official dumps.  Theoretically this should
             # be all right, though.
@@ -1532,7 +1644,7 @@ char_vehicle_packages = {
             'CD_StingRay_Skin_F_Burst_SF',
             'CD_StingRay_Skin_F_Char_SF',
             'CD_StingRay_Skin_F_Infern_SF',
-            'CD_StingRay_Skin_F_Propan_SF',
+            'cd_sTINGRay_Skin_F_Propan_SF',
             'CD_StingRay_Skin_Graffiti_SF',
             'CD_StingRay_Skin_GreenDk_SF',
             'CD_StingRay_Skin_GreenLt_SF',

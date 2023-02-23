@@ -49,7 +49,7 @@ dump_start_re = re.compile('^\*\*\* Property dump for object \'(\S+) (\S+)\' \*\
 
 blcmm_orgs = {
     'BL2': {
-        'Actions': [
+        'Actions': {
             'ActionSequence',
             'ActionSequenceList',
             'ActionSequencePawn',
@@ -104,8 +104,8 @@ blcmm_orgs = {
             'Action_SwoopAttack',
             'Action_VehicleTurret',
             'WillowActionSequencePawn',
-            ],
-        'AI': [
+            },
+        'AI': {
             'AIComponent',
             'WillowAIBlackboardComponent',
             'WillowAIComponent',
@@ -126,8 +126,8 @@ blcmm_orgs = {
             'WillowAICranePawn',
             'WillowAIPawn',
             'AIResource',
-            ],
-        'Animations': [
+            },
+        'Animations': {
             'AnimMetaData_SkelControl',
             'AnimMetaData_SkelControlKeyFrame',
             'AnimNotify_AkEvent',
@@ -250,12 +250,12 @@ blcmm_orgs = {
             'WillowSkelControl_UpperEyelidLook',
             'WillowStaggerAnimNodeBlend',
             'AnimSet',
-            ],
-        'Animation Sequences': [
-            'AnimSequence',
-            ],
+            },
+        #'Animation Sequences': {
+        #    'AnimSequence',
+        #    },
         'Base':
-            [
+            {
             'AnemoneInfectionDefinition',
             'AnemoneInfectionState',
             'AccessControl',
@@ -705,6 +705,7 @@ blcmm_orgs = {
             'ChildConnection',
             'DemoRecConnection',
             'IpNetConnectionSteamworks',
+            'IpNetConnectionEpicStore',
             'LocalPlayer',
             'NetConnection',
             'Player',
@@ -796,8 +797,8 @@ blcmm_orgs = {
             'WillowInventoryPartDefinition',
             'WillowSystemSettings',
             'WorldInfo',
-            ],
-        'Behaviors': [
+            },
+        'Behaviors': {
             'BehaviorBase',
             'Behavior_AIChangeInventory',
             'Behavior_AICloak',
@@ -1148,8 +1149,8 @@ blcmm_orgs = {
             'ProjectileBehavior_SetSpeed',
             'ProjectileBehavior_SetStickyGrenade',
             'ProjectileBehavior_TagPayloadType',
-            ],
-        'Dialog': [
+            },
+        'Dialog': {
             'GearboxDialogEventTag',
             'GearboxDialogGlobalsDefinition',
             'GearboxDialogNameTag',
@@ -1157,8 +1158,8 @@ blcmm_orgs = {
             'WillowDialogEventTagSpecialized',
             'WillowDialogGlobalsDefinition',
             'WillowDialogNameTag',
-            ],
-        'Kismets': [
+            },
+        'Kismets': {
             'PersistentSequenceData',
             'PrefabSequence',
             'PrefabSequenceContainer',
@@ -1516,8 +1517,8 @@ blcmm_orgs = {
             'Trigger_LOS',
             'WillowTrigger',
             'WillowWaypoint',
-            ],
-        'Meshes': [
+            },
+        'Meshes': {
             'GestaltSkeletalMeshDefinition',
             'ApexComponentBase',
             'ApexDynamicComponent',
@@ -1534,8 +1535,8 @@ blcmm_orgs = {
             'SkeletalMesh',
             'StaticMesh',
             'WiringMesh',
-            ],
-        'Missions': [
+            },
+        'Missions': {
             'MissionDirectivesDefinition',
             'QuestAcceptGFxDefinition',
             'MissionDefinition',
@@ -1547,8 +1548,8 @@ blcmm_orgs = {
             'FailableMissionDirectiveWaypointComponent',
             'MissionDirectiveWaypointComponent',
             'MissionObjectiveWaypointComponent',
-            ],
-        'Particles': [
+            },
+        'Particles': {
             'EffectCollectionDefinition',
             'ParticleEmitter',
             'ParticleSpriteEmitter',
@@ -1683,8 +1684,8 @@ blcmm_orgs = {
             'ParticleModuleVelocity_Seeded',
             'ParticleSystem',
             'ParticleSystemComponent',
-            ],
-        'Populations': [
+            },
+        'Populations': {
             'PopulationDefinition',
             'WillowPopulationDefinition',
             'PopulationEncounter',
@@ -1714,8 +1715,8 @@ blcmm_orgs = {
             'WillowPopulationPoint',
             'WillowPopulationPoint_Dynamic',
             'WillowPopulationPointDefinition',
-            ],
-        'Skins': [
+            },
+        'Skins': {
             'DecalMaterial',
             'LightMapTexture2D',
             'Material',
@@ -1736,8 +1737,8 @@ blcmm_orgs = {
             'TextureRenderTarget',
             'TextureRenderTarget2D',
             'TextureRenderTargetCube',
-            ],
-        'StaticMeshes': [
+            },
+        'StaticMeshes': {
             'BlockingMeshComponent',
             'CoverMeshComponent',
             'GearboxStaticMeshComponent',
@@ -1745,8 +1746,8 @@ blcmm_orgs = {
             'InteractiveFoliageComponent',
             'SplineMeshComponent',
             'StaticMeshComponent',
-            ],
-        'WillowData': [
+            },
+        'WillowData': {
             'WillowPlayerPawn',
             'WillowPendingLevelPlayerController',
             'WillowPlayerController',
@@ -1809,10 +1810,10 @@ blcmm_orgs = {
             'WillowVendingMachine',
             'WillowVendingMachineBase',
             'WillowVendingMachineBlackMarket',
-            ],
+            },
         },
     'TPS': {
-        'AI': [
+        'AI': {
             'AIClassDefinition',
             'AIComponent',
             'AIController',
@@ -1833,8 +1834,8 @@ blcmm_orgs = {
             'WillowAIEncounterComponent',
             'WillowAIPawn',
             'WillowMind',
-            ],
-        'Actions': [
+            },
+        'Actions': {
             'ActionSequence',
             'ActionSequenceList',
             'ActionSequencePawn',
@@ -1896,11 +1897,11 @@ blcmm_orgs = {
             'OzAction_LeapAndShootAtTarget',
             'OzAction_ZarpedonBoss_Flight',
             'WillowActionSequencePawn',
-            ],
-        'Animation Sequences': [
+            },
+        'Animation Sequences': {
             'AnimSequence',
-            ],
-        'Animations': [
+            },
+        'Animations': {
             'AnimMetaData_SkelControl',
             'AnimMetaData_SkelControlKeyFrame',
             'AnimNode',
@@ -2023,8 +2024,8 @@ blcmm_orgs = {
             'WillowSkelControl_TurretConstrained',
             'WillowSkelControl_UpperEyelidLook',
             'WillowStaggerAnimNodeBlend',
-            ],
-        'Base': [
+            },
+        'Base': {
             'AIResourceAttributeValueResolver',
             'AIResourceExpressionEvaluator',
             'AIState',
@@ -2619,8 +2620,8 @@ blcmm_orgs = {
             'WillowVersusDuelMessage',
             'WorldInfo',
             'WwiseSoundGroup',
-            ],
-        'Behaviors': [
+            },
+        'Behaviors': {
             'AIBehaviorProviderDefinition',
             'BehaviorAliasDefinition',
             'BehaviorAliasLookupDefinition',
@@ -3049,8 +3050,8 @@ blcmm_orgs = {
             'ProjectileBehavior_SetStickyGrenade',
             'ProjectileBehavior_TagPayloadType',
             'WillowVersusDuelBehavior',
-            ],
-        'Dialog': [
+            },
+        'Dialog': {
             'GearboxDialogEventTag',
             'GearboxDialogGlobalsDefinition',
             'GearboxDialogNameTag',
@@ -3058,8 +3059,8 @@ blcmm_orgs = {
             'WillowDialogEventTagSpecialized',
             'WillowDialogGlobalsDefinition',
             'WillowDialogNameTag',
-            ],
-        'Kismets': [
+            },
+        'Kismets': {
             'GFxAction_CloseMovie',
             'GFxAction_GetVariable',
             'GFxAction_Invoke',
@@ -3421,8 +3422,8 @@ blcmm_orgs = {
             'WillowSeqVar_TimeOfDay',
             'WillowTrigger',
             'WillowWaypoint',
-            ],
-        'Meshes': [
+            },
+        'Meshes': {
             'ApexComponentBase',
             'ApexDynamicComponent',
             'ApexStaticComponent',
@@ -3439,8 +3440,8 @@ blcmm_orgs = {
             'WillowPopulationPointPreviewComponent',
             'WillowPreviewComponent',
             'WiringMesh',
-            ],
-        'Missions': [
+            },
+        'Missions': {
             'FailableMissionDirectiveWaypointComponent',
             'MissionDefinition',
             'MissionDirectiveWaypointComponent',
@@ -3452,8 +3453,8 @@ blcmm_orgs = {
             'MissionObjectiveWaypointComponent',
             'MissionPopulationAspect',
             'QuestAcceptGFxDefinition',
-            ],
-        'Particles': [
+            },
+        'Particles': {
             'EffectCollectionDefinition',
             'OzParticleModuleLocationIceChunks',
             'OzParticleModuleLocationLine',
@@ -3591,8 +3592,8 @@ blcmm_orgs = {
             'ParticleModuleVelocity_Seeded',
             'ParticleSpriteEmitter',
             'ParticleSystem',
-            ],
-        'Populations': [
+            },
+        'Populations': {
             'PopulationDefinition',
             'PopulationEncounter',
             'PopulationFactory',
@@ -3623,8 +3624,8 @@ blcmm_orgs = {
             'WillowPopulationPoint',
             'WillowPopulationPointDefinition',
             'WillowPopulationPoint_Dynamic',
-            ],
-        'Skins': [
+            },
+        'Skins': {
             'DecalMaterial',
             'LightMapTexture2D',
             'Material',
@@ -3645,8 +3646,8 @@ blcmm_orgs = {
             'TextureRenderTarget',
             'TextureRenderTarget2D',
             'TextureRenderTargetCube',
-            ],
-        'StaticMeshes': [
+            },
+        'StaticMeshes': {
             'BlockingMeshComponent',
             'CoverMeshComponent',
             'GearboxStaticMeshComponent',
@@ -3654,8 +3655,8 @@ blcmm_orgs = {
             'InteractiveFoliageComponent',
             'SplineMeshComponent',
             'StaticMeshComponent',
-            ],
-        'WillowData': [
+            },
+        'WillowData': {
             'FastTravelStation',
             'Inventory',
             'LevelTravelStation',
@@ -3726,13 +3727,14 @@ blcmm_orgs = {
             'WillowVendingMachineShift',
             'WillowWeapon',
             'WillowWeaponPawn',
-            ],
+            },
         },
     }
 blcmm_org = blcmm_orgs[game]
 
 # Loop through and find all dump files, and construct an 'Others' datafile
 # based on all classes not explicitly categorized.
+classes_to_skip = {}
 if args.others:
     all_classes = set()
     for filename in os.listdir(input_dir):
@@ -3741,9 +3743,18 @@ if args.others:
         elif filename.endswith('.dump.xz'):
             all_classes.add(filename[:-8])
     for (cat_name, classes) in blcmm_org.items():
+        classes_to_skip[cat_name] = set()
         for classname in classes:
-            all_classes.remove(classname)
+            if classname in all_classes:
+                all_classes.remove(classname)
+            else:
+                classes_to_skip[cat_name].add(classname)
     blcmm_org['Others'] = sorted(all_classes)
+    classes_to_skip['Others'] = set()
+
+for cat_name in blcmm_org.keys():
+    for class_to_skip in classes_to_skip[cat_name]:
+        blcmm_org[cat_name].remove(class_to_skip)
 
 if not os.path.isdir(output_dir):
     os.mkdir(output_dir)
@@ -3753,7 +3764,7 @@ index_files = []
 main_index_file = 'index.index'
 index_files.append(main_index_file)
 
-with open(os.path.join(input_dir, main_index_file), 'w') as main_idx_odf:
+with open(os.path.join(input_dir, main_index_file), 'w', newline="\r\n") as main_idx_odf:
 
     for (cat_name, classes) in blcmm_org.items():
         print('Processing {}...'.format(cat_name))
@@ -3766,35 +3777,39 @@ with open(os.path.join(input_dir, main_index_file), 'w') as main_idx_odf:
         data_files.append(list_file)
         index_file = '{}.class.index'.format(cat_name)
         index_files.append(index_file)
-        with open(os.path.join(input_dir, list_file), 'w') as odf:
-            with open(os.path.join(input_dir, index_file), 'w') as idx_odf:
-                for class_name in classes:
+        with open(os.path.join(input_dir, list_file), 'w', newline="\r\n") as odf:
+            with open(os.path.join(input_dir, index_file), 'w', newline="\r\n") as idx_odf:
+                for class_name in sorted(classes):
                     print(class_name, file=odf)
                     print(class_name, file=idx_odf)
 
         # Object index file...
         obj_index_file = '{}.index'.format(cat_name)
         index_files.append(obj_index_file)
-        with open(os.path.join(input_dir, obj_index_file), 'w') as idx_odf:
+        with open(os.path.join(input_dir, obj_index_file), 'w', newline="\r\n") as idx_odf:
 
             # Now the data files...
-            for class_name in classes:
+            for class_name in sorted(classes):
 
                 # Make sure to include the .dump files
                 dump_file = '{}.dump'.format(class_name)
-                data_files.append(dump_file)
 
                 # Generate a .dict file for each one
                 dict_file = '{}.dict'.format(class_name)
+
+                dump_file_full = os.path.join(input_dir, dump_file)
+                if os.path.exists(dump_file_full):
+                    df = open(dump_file_full, encoding='latin1')
+                elif os.path.exists('{}.xz'.format(dump_file_full)):
+                    df = lzma.open('{}.xz'.format(dump_file_full), 'rt', encoding='latin1')
+                else:
+                    print('WARNING: Dump file {} not found!'.format(dump_file))
+                    continue
+
+                data_files.append(dump_file)
                 data_files.append(dict_file)
-                with open(os.path.join(input_dir, dict_file), 'w') as odf:
-                    dump_file_full = os.path.join(input_dir, dump_file)
-                    if os.path.exists(dump_file_full):
-                        df = open(dump_file_full, encoding='latin1')
-                    elif os.path.exists('{}.xz'.format(dump_file_full)):
-                        df = lzma.open('{}.xz'.format(dump_file_full), 'rt', encoding='latin1')
-                    else:
-                        raise Exception('Dump file {} not found!'.format(dump_file))
+
+                with open(os.path.join(input_dir, dict_file), 'w', newline="\r\n") as odf:
                     line_num = 0
                     for line in df:
                         match = dump_start_re.match(line)
@@ -3802,14 +3817,14 @@ with open(os.path.join(input_dir, main_index_file), 'w') as main_idx_odf:
                             print('{} {}'.format(line_num, match.group(2)), file=odf)
                             print(match.group(2), file=idx_odf)
                         line_num += 1
-                    df.close()
+                df.close()
 
         # Finally, create a zipfile!
         zip_filename = os.path.join(output_dir, 'BLCMM_Data_{}_{}.jar'.format(game, cat_name))
         with zipfile.ZipFile(zip_filename, 'w', compression=zipfile.ZIP_DEFLATED) as myzip:
 
             # Write a MANIFEST.MF
-            myzip.writestr('META-INF/MANIFEST.MF', "Manifest-Version: 1.0\n\n")
+            myzip.writestr('META-INF/MANIFEST.MF', "Manifest-Version: 1.0\r\n\r\n")
 
             # Add all our data files
             for data_file in data_files:
@@ -3836,7 +3851,7 @@ zip_filename = os.path.join(output_dir, 'BLCMM_Data_{}_Indices.jar'.format(game)
 with zipfile.ZipFile(zip_filename, 'w', compression=zipfile.ZIP_DEFLATED) as myzip:
 
     # Write a MANIFEST.MF
-    myzip.writestr('META-INF/MANIFEST.MF', "Manifest-Version: 1.0\n\n")
+    myzip.writestr('META-INF/MANIFEST.MF', "Manifest-Version: 1.0\r\n\r\n")
 
     # Add all our data files
     for data_file in index_files:

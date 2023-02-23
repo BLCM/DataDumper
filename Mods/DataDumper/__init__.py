@@ -23,12 +23,17 @@ import math
 import random
 import unrealsdk
 from . import dumperdata
+from Mods.ModMenu import RegisterMod, SDKMod, ModTypes, EnabledSaveType
+from Mods.ModMenu.ModObjects import Game
+from Mods.ModMenu.KeybindManager import Keybind
 
-class DataDumper(unrealsdk.BL2MOD):
+class DataDumper(SDKMod):
 
     Name = "Data Dumper"
     Description = "Dumps data, for use in BLCMM OE resource files"
     Author = 'apocalyptech'
+    Types = ModTypes.Utility
+    SaveEnabledState = EnabledSaveType.NotSaved
 
     dd_input_name = 'Run Dumps'
     dd_key = 'B'
@@ -42,11 +47,17 @@ class DataDumper(unrealsdk.BL2MOD):
     mode_rev_input_name = 'Cycle Mode Backwards'
     mode_rev_key = 'P'
 
+    #Keybinds = [
+    #        (dd_input_name, dd_key),
+    #        (mode_input_name, mode_key),
+    #        (mode_rev_input_name, mode_rev_key),
+    #        (cancel_input_name, cancel_key),
+    #        ]
     Keybinds = [
-            (dd_input_name, dd_key),
-            (mode_input_name, mode_key),
-            (mode_rev_input_name, mode_rev_key),
-            (cancel_input_name, cancel_key),
+            Keybind(dd_input_name, dd_key),
+            Keybind(mode_input_name, mode_key),
+            Keybind(mode_rev_input_name, mode_rev_key),
+            Keybind(cancel_input_name, cancel_key),
             ]
 
     tick_func_name = 'WillowGame.WillowGameViewportClient.Tick'
@@ -73,6 +84,7 @@ class DataDumper(unrealsdk.BL2MOD):
     map_magic = '<map>'
     magic_commands = {}
 
+    # TODO: this should really be an Enum
     (MODE_FWD,
             MODE_FWD_WITHOUT_CHAR,
             MODE_REV,
@@ -107,11 +119,18 @@ class DataDumper(unrealsdk.BL2MOD):
             MODE_DUMP_JACK_STINGRAY_CRYO,
             MODE_DUMP_ATHENA,
             MODE_DUMP_AURELIA,
-            ) = range(33)
+            # Extra AoDK modes
+            MODE_AXTON,
+            MODE_MAYA,
+            MODE_GAIGE,
+            MODE_DUMP_AXTON,
+            MODE_DUMP_MAYA,
+            MODE_DUMP_GAIGE,
+            ) = range(39)
 
     MODELIST = []
     MODES = {
-            'BL2': [
+            Game.BL2: [
                 MODE_FWD,
                 MODE_FWD_WITHOUT_CHAR,
                 MODE_REV,
@@ -136,7 +155,26 @@ class DataDumper(unrealsdk.BL2MOD):
                 MODE_DUMP_KRIEG,
                 MODE_RANDOM_MAPS,
                 ],
-            'TPS': [
+            Game.AoDK: [
+                MODE_FWD,
+                MODE_FWD_WITHOUT_CHAR,
+                MODE_REV,
+                MODE_REV_WITHOUT_CHAR,
+                MODE_AXTON,
+                MODE_MAYA,
+                MODE_GAIGE,
+                MODE_ZERO,
+                MODE_KRIEG,
+                MODE_DUMP,
+                MODE_DUMP_WITHOUT_CHAR,
+                MODE_DUMP_AXTON,
+                MODE_DUMP_MAYA,
+                MODE_DUMP_GAIGE,
+                MODE_DUMP_ZERO,
+                MODE_DUMP_KRIEG,
+                MODE_RANDOM_MAPS,
+                ],
+            Game.TPS: [
                 MODE_FWD,
                 MODE_FWD_WITHOUT_CHAR,
                 MODE_REV,
@@ -195,6 +233,13 @@ class DataDumper(unrealsdk.BL2MOD):
             MODE_DUMP_JACK_STINGRAY_CRYO: ('Jack + Cryo Stingray Dump', 'jack', TYPE_DUMP),
             MODE_DUMP_ATHENA: ('Athena Dump', 'athena', TYPE_DUMP),
             MODE_DUMP_AURELIA: ('Aurelia Dump', 'aurelia', TYPE_DUMP),
+            # Additional AoDK modes
+            MODE_AXTON: ('Axton Getall', 'axton', TYPE_GETALL),
+            MODE_MAYA: ('Maya Getall', 'maya', TYPE_GETALL),
+            MODE_GAIGE: ('Gaige Getall', 'gaige', TYPE_GETALL),
+            MODE_DUMP_AXTON: ('Axton Dump', 'axton', TYPE_DUMP),
+            MODE_DUMP_MAYA: ('Maya Dump', 'maya', TYPE_DUMP),
+            MODE_DUMP_GAIGE: ('Gaige Dump', 'gaige', TYPE_DUMP),
             }
 
     getall_files = []
@@ -225,18 +270,12 @@ class DataDumper(unrealsdk.BL2MOD):
         # Find out what game we're running in.  This is technically a bit fragile, since
         # theoretically the game(s) could get updated at some point with new engine
         # versions, though that seems unlikely.
-        engine_version = unrealsdk.GetEngine().GetEngineVersion()
-        if engine_version == 8638 or engine_version == 8639:
-            self.game = 'BL2'
-        elif engine_version == 8630 or engine_version == 8631:
-            self.game = 'TPS'
-        else:
-            raise Exception('Unknown game engine version: {}'.format(engine_version))
+        self.game = Game.GetCurrent()
         self.MODELIST = self.MODES[self.game]
 
         # Get a list of all classes
         self.classes = []
-        for obj in unrealsdk.UObject.FindAll('Class'):
+        for obj in unrealsdk.UObject.FindAll('Class', True):
             if obj.Name != 'Field' and obj.Name != 'Object':
                 self.classes.append(obj.Name)
         self.classes.sort()
@@ -644,4 +683,4 @@ class DataDumper(unrealsdk.BL2MOD):
         elif input_obj.Name == self.cancel_input_name:
             self.cancelCycle()
 
-unrealsdk.Mods.append(DataDumper())
+RegisterMod(DataDumper())

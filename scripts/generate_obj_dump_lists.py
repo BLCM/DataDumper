@@ -27,7 +27,8 @@ import tempfile
 filename_fwd = 'Launch.log-all_object_names_fwd'
 filename_rev = 'Launch.log-all_object_names_rev'
 output_dirs = {
-        'BL2': '/usr/local/games/Steam/SteamApps/common/Borderlands 2/Binaries/datadumper',
+        #'BL2': '/usr/local/games/Steam/SteamApps/common/Borderlands 2/Binaries/datadumper',
+        'AoDK': '/usr/local/winex/egs/drive_c/Program Files/Epic Games/TTAoDKOneShotAdventure/Binaries/datadumper',
         'TPS': '/usr/local/games/Steam/SteamApps/common/BorderlandsPreSequel/Binaries/datadumper',
         }
 with open(filename_fwd) as df:
@@ -35,8 +36,9 @@ with open(filename_fwd) as df:
     for line in df:
         if line.startswith('Log: Version: '):
             version = int(line.strip()[len('Log: Version: '):])
-            if version == 8638:
-                game = 'BL2'
+            if version == 8638 or version == 8639:
+                #game = 'BL2'
+                game = 'AoDK'
             elif version == 8630:
                 game = 'TPS'
             else:
