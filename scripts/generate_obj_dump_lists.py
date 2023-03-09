@@ -27,26 +27,52 @@ import tempfile
 filename_fwd = 'Launch.log-all_object_names_fwd'
 filename_rev = 'Launch.log-all_object_names_rev'
 output_dirs = {
-        #'BL2': '/usr/local/games/Steam/SteamApps/common/Borderlands 2/Binaries/datadumper',
+        'BL2': '/usr/local/games/Steam/SteamApps/common/Borderlands 2/Binaries/datadumper',
         'AoDK': '/usr/local/winex/egs/drive_c/Program Files/Epic Games/TTAoDKOneShotAdventure/Binaries/datadumper',
         'TPS': '/usr/local/games/Steam/SteamApps/common/BorderlandsPreSequel/Binaries/datadumper',
         }
+game = None
 with open(filename_fwd) as df:
     line_num = 0
     for line in df:
-        if line.startswith('Log: Version: '):
-            version = int(line.strip()[len('Log: Version: '):])
-            if version == 8638 or version == 8639:
-                #game = 'BL2'
-                game = 'AoDK'
-            elif version == 8630:
+        # Original check here was for engine version number, but that doesn't let us
+        # distinguish between BL2 and AoDK
+        if False:
+            if line.startswith('Log: Version: '):
+                version = int(line.strip()[len('Log: Version: '):])
+                if version == 8638 or version == 8639:
+                    #game = 'BL2'
+                    game = 'AoDK'
+                elif version == 8630:
+                    game = 'TPS'
+                else:
+                    raise RuntimeError('Unknown engine version found in logfile: {}'.format(version))
+                break
+
+        # so, the new one is looking for the "Base directory" instead.  This could fail
+        # if a user's got some funky custom install dirs, but for my own purposes it
+        # should be fine.
+        if line.startswith('Log: Base directory: '):
+            if 'Borderlands 2' in line:
+                game = 'BL2'
+                break
+            elif 'BorderlandsPreSequel' in line:
                 game = 'TPS'
+                break
+            elif 'TTAoDKOneShotAdventure' in line:
+                game = 'AoDK'
+                break
             else:
-                raise Exception('Unknown engine version found in logfile: {}'.format(version))
-            break
+                raise RuntimeError(f'Unknown Base Directory line: {line}')
+
+        # Don't process the whole file
         line_num += 1
-        if line_num > 5:
-            raise Exception('Could not find engine version number!')
+        if line_num > 10:
+            raise RuntimeError('Could not find engine version number!')
+
+if game is None:
+    raise RuntimeError('Gametype not detected!')
+
 output_dir = output_dirs[game]
 print('Found {}, writing to {}'.format(game, output_dir))
 
