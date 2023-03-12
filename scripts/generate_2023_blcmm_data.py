@@ -289,6 +289,7 @@ class UEObject:
         self.children = []
         self.total_children = 0
         self.show_class_ids = set()
+        self.has_class_children = set()
 
     def __lt__(self, other):
         return self.name.casefold() < other.name.casefold()
@@ -360,11 +361,21 @@ class UEObject:
         It does come at the cost of database size, though!  During development on
         the BL2 dataset, this increases the uncompressed database size by over
         200MB.
+
+        The has_class_children field is used to assist with the tree rendering
+        in BLCMM -- a simple boolean so that the tree-building routines know
+        right away whether a UEObject is a leaf or not, so it can skip adding
+        a "dummy" entry where one isn't needed.
         """
         if ids is None:
             if self.class_obj is None:
                 return
             ids = self.class_obj.aggregate_ids
+        else:
+            # The only way to get here is if we're a recursive call to a parent,
+            # which means that this object has children for this class.  So,
+            # mark that down
+            self.has_class_children |= ids
         self.show_class_ids |= ids
         if self.parent is not None:
             self.parent.set_show_class_ids(ids)
@@ -376,8 +387,12 @@ class UEObject:
         rows in the table!
         """
         for idnum in sorted(self.show_class_ids):
-            curs.execute('insert into object_show_class_ids (id, class) values (?, ?)',
-                    (self.id, idnum))
+            if idnum in self.has_class_children:
+                has_children = 1
+            else:
+                has_children = 0
+            curs.execute('insert into object_show_class_ids (id, class, has_children) values (?, ?, ?)',
+                    (self.id, idnum, has_children))
 
 
 class ObjectRegistry:
@@ -601,6 +616,7 @@ def write_schema(conn, curs):
         create table object_show_class_ids (
             id integer not null references object (id),
             class integer not null references class (id),
+            has_children tinyint not null default 0,
             unique (id, class)
         )
         """)
