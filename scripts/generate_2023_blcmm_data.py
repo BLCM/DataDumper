@@ -84,6 +84,8 @@ import argparse
 #
 #   3. When ordered by `id`, the `class` table rows are in "tree" order -- as in,
 #      there will *never* be a `parent` field whose row we haven't already seen.
+#
+#   4. Datafile filename indexes start at 1, for the same reason as point #1 above.
 
 
 class UEClass:
@@ -285,6 +287,7 @@ class UEObject:
         self.class_obj = class_obj
         self.file_index = file_index
         self.file_position = file_position
+        self.bytes = None
         self.id = None
         self.children = []
         self.total_children = 0
@@ -336,6 +339,8 @@ class UEObject:
         if self.file_position is not None:
             fields.append('file_position')
             values.append(self.file_position)
+            fields.append('bytes')
+            values.append(self.bytes)
         curs.execute('insert into object ({}) values ({})'.format(
             ', '.join(fields),
             ', '.join(['?']*len(fields)),
@@ -520,12 +525,15 @@ def get_object_registry(args, cr):
         class_obj = cr[filename[:-8]]
         with lzma.open(os.path.join(args.categorized_dir, filename), 'rt', encoding='latin1') as df:
             pos = 0
-            cur_index = 0
+            cur_index = 1
             odf = None
+            new_obj = None
             for line in df:
                 if line.startswith('*** Property dump for object'):
+                    if new_obj is not None:
+                        new_obj.bytes = pos-new_obj.file_position
                     obj_name = line.split("'")[1].split(' ')[-1]
-                    obj_reg.get_or_add(obj_name, class_obj, cur_index, pos)
+                    new_obj = obj_reg.get_or_add(obj_name, class_obj, cur_index, pos)
                     if odf is None or pos >= max_bytes:
                         if odf is not None:
                             odf.close()
@@ -537,6 +545,8 @@ def get_object_registry(args, cr):
                         pos = 0
                 odf.write(line)
                 pos = odf.tell()
+            if new_obj is not None:
+                new_obj.bytes = odf.tell()-new_obj.file_position
             odf.close()
         # Break here to only process the first of the dump files
         #break
@@ -597,6 +607,7 @@ def write_schema(conn, curs):
             separator character(1),
             file_index int,
             file_position int,
+            bytes int,
             num_children int not null default 0,
             total_children int not null default 0
         )
