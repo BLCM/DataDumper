@@ -100,6 +100,7 @@ class UEClass:
         self.children = []
         self.total_children = 0
         self.aggregate_ids = set()
+        self.num_datafiles = 0
 
     def __lt__(self, other):
         # BLCMM's historically sorted *with* case sensitivity, but nuts to that.  I've long
@@ -159,15 +160,18 @@ class UEClass:
         if self.parent is not None:
             self.parent.inc_children()
 
-    def fix_total_children(self, conn, curs):
+    def fix_total_children_and_datafiles(self, conn, curs):
         """
         Store our `total_children` value in the database.  When building the DB
         we process the Classes first, then Objects, but we don't have this
         information until we're through with the Object processing, so we've
         gotta come back after the fact and update the record.
+
+        This also updates `num_datafiles` as well, since that's something else
+        we don't know until we've processed objects
         """
-        curs.execute('update class set total_children=? where id=?',
-                (self.total_children, self.id))
+        curs.execute('update class set total_children=?, num_datafiles=? where id=?',
+                (self.total_children, self.num_datafiles, self.id))
 
     def set_aggregate_ids(self, ids=None):
         """
@@ -237,14 +241,17 @@ class ClassRegistry:
         self['Object'].populate_db(conn, curs)
         conn.commit()
 
-    def fix_total_children(self, conn, curs):
+    def fix_total_children_and_datafiles(self, conn, curs):
         """
         Once our `total_children` metric has been populated in all the Class
         objects (which happens as we build out the Object Registry), this will
         update the database with all those totals.
+
+        This method now also updates the num_datafiles count as well, since
+        that's another thing we can only know after processing objects.
         """
         for class_obj in self.classes.values():
-            class_obj.fix_total_children(conn, curs)
+            class_obj.fix_total_children_and_datafiles(conn, curs)
         conn.commit()
 
     def set_aggregate_ids(self):
@@ -543,6 +550,7 @@ def get_object_registry(args, cr):
                                 f'{class_obj.name}.{cur_index}'), end='')
                         odf = open(os.path.join(args.obj_dir, f'{class_obj.name}.dump.{cur_index}'), 'wt', encoding='latin1')
                         pos = 0
+                        class_obj.num_datafiles += 1
                 odf.write(line)
                 pos = odf.tell()
             if new_obj is not None:
@@ -573,7 +581,8 @@ def write_schema(conn, curs):
             name text unique not null,
             parent integer references class (id),
             num_children int not null default 0,
-            total_children int not null default 0
+            total_children int not null default 0,
+            num_datafiles int not null default 0
         )
         """)
     # Direct class children, for generating the GUI tree
@@ -660,7 +669,7 @@ def main():
 
     parser.add_argument('-m', '--max-dump-size',
             type=int,
-            default=30,
+            default=15,
             help="Maximum data dump file size",
             )
 
@@ -729,7 +738,7 @@ def main():
     # Clean up class total_children counts
     if args.verbose:
         print('Cleaning up Class total_children counts')
-    cr.fix_total_children(conn, curs)
+    cr.fix_total_children_and_datafiles(conn, curs)
 
     # Close the DB
     curs.close()
