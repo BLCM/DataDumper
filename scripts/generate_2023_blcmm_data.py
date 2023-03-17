@@ -2237,6 +2237,18 @@ class UEClass:
             curs.execute('insert into class_aggregate (id, aggregate) values (?, ?)',
                     (self.id, idnum))
 
+    def store_subclasses(self, conn, curs, from_class=None):
+        """
+        This table is sort of the inverse of `class_aggregate` -- it lets us know
+        (recursively) all subclasses of this class.
+        """
+        if from_class is None:
+            from_class = self.id
+        curs.execute('insert into class_subclass (class, subclass) values (?, ?)',
+                (from_class, self.id))
+        for child in self.children:
+            child.store_subclasses(conn, curs, from_class)
+
 
 class ClassRegistry:
     """
@@ -2260,6 +2272,8 @@ class ClassRegistry:
         don't already exist, they'll get created -- if they *do* already exist,
         they'll just get returned, so we can link up parents/children properly.
         """
+        if name.strip() == 'None':
+            return None
         category = cat_reg.get_by_classname(name)
         if name not in self.classes:
             self.classes[name] = UEClass(name, category)
@@ -2302,6 +2316,14 @@ class ClassRegistry:
         """
         for class_obj in self.classes.values():
             class_obj.store_aggregate_ids(conn, curs)
+        conn.commit()
+
+    def store_subclasses(self, conn, curs):
+        """
+        Store our subclass mapping information.
+        """
+        for class_obj in self.classes.values():
+            class_obj.store_subclasses(conn, curs)
         conn.commit()
 
 
@@ -2555,7 +2577,8 @@ def get_class_registry(categorized_dir, cat_reg):
             for line in df:
                 if line.startswith('  ObjectArchetype='):
                     parent_name = cr.get_or_add(line.split('=', 1)[1].split("'", 1)[0], cat_reg)
-                    class_obj.set_parent(parent_name)
+                    if parent_name is not None:
+                        class_obj.set_parent(parent_name)
                     break
 
     return cr
@@ -2655,6 +2678,15 @@ def write_schema(conn, curs):
             id integer not null references class (id),
             aggregate integer not null references class (id),
             unique (id, aggregate)
+        )
+        """)
+    # Subclass info -- sort of the opposite of class_aggregate.  Starting
+    # from the primary-key class, it lets us know all subclass types as well.
+    curs.execute("""
+        create table class_subclass (
+            class integer not null references class (id),
+            subclass integer not null references class (id),
+            unique (class, subclass)
         )
         """)
     # Info about a particular object (may not *actually* be an object;
@@ -2776,6 +2808,9 @@ def main():
     if args.verbose:
         print(' - Storing aggregate IDs')
     cr.store_aggregate_ids(conn, curs)
+    if args.verbose:
+        print(' - Storing subclass map')
+    cr.store_subclasses(conn, curs)
     if args.show_class_tree:
         print('Generated class tree:')
         cr.get_or_add('Object').display()
