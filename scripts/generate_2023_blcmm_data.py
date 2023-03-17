@@ -91,6 +91,9 @@ import argparse
 #      database, including the code-added `Others` category.  It'll refuse
 #      to load the data if they aren't all found.  New categories in here
 #      will also require a BLCMM update.
+#
+#   6. BLCMM relies on the text indexes in the DB being case-insensitive
+#      (at least for `object.name` -- the others may not be as important)
 
 # Categories for user to choose for fulltext search.  This list is kind of a
 # conglomeration of both BL2 and TPS classtypes, but it won't result in any
@@ -2618,19 +2621,21 @@ def write_schema(conn, curs):
     curs.execute("""
         create table category (
             id integer primary key autoincrement,
-            name text unique not null
+            name text not null collate nocase,
+            unique (name collate nocase)
         )
         """)
     # Info about a particular class
     curs.execute("""
         create table class (
             id integer primary key autoincrement,
-            name text unique not null,
+            name text not null collate nocase,
             category integer not null references category (id),
             parent integer references class (id),
             num_children int not null default 0,
             total_children int not null default 0,
-            num_datafiles int not null default 0
+            num_datafiles int not null default 0,
+            unique (name collate nocase)
         )
         """)
     # Direct class children, for generating the GUI tree
@@ -2657,8 +2662,8 @@ def write_schema(conn, curs):
     curs.execute("""
         create table object (
             id integer primary key autoincrement,
-            name text unique not null,
-            short_name text not null,
+            name text not null collate nocase,
+            short_name text not null collate nocase,
             class integer references class (id),
             parent integer references object (id),
             separator character(1),
@@ -2666,7 +2671,8 @@ def write_schema(conn, curs):
             file_position int,
             bytes int,
             num_children int not null default 0,
-            total_children int not null default 0
+            total_children int not null default 0,
+            unique (name collate nocase)
         )
         """)
     curs.execute('create index idx_object_parent on object(parent)')
@@ -2717,7 +2723,7 @@ def main():
 
     parser.add_argument('-m', '--max-dump-size',
             type=int,
-            default=15,
+            default=10,
             help="Maximum data dump file size",
             )
 
