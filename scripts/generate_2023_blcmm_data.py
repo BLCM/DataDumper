@@ -2132,6 +2132,7 @@ class UEClass:
         self.total_children = 0
         self.aggregate_ids = set()
         self.num_datafiles = 0
+        self.attr_names = set()
 
     def __lt__(self, other):
         # BLCMM's historically sorted *with* case sensitivity, but nuts to that.  I've long
@@ -2204,6 +2205,17 @@ class UEClass:
         curs.execute('update class set total_children=?, num_datafiles=? where id=?',
                 (self.total_children, self.num_datafiles, self.id))
 
+    def store_attr_names(self, conn, curs):
+        """
+        This table stores all valid attributes for the class that we've seen in
+        the data dumps so far.  Like `fix_total_children_and_datafiles` above,
+        we can't actually do this until we've processed all objects, which is why
+        we're not bothering until later.
+        """
+        for attr_name in sorted(self.attr_names):
+            curs.execute('insert into attr_name (class, name) values (?, ?)',
+                    (self.id, attr_name))
+
     def set_aggregate_ids(self, ids=None):
         """
         Sets our "aggregate" IDs.  This basically lets us easily know the
@@ -2249,6 +2261,9 @@ class UEClass:
         for child in self.children:
             child.store_subclasses(conn, curs, from_class)
 
+    def add_attr(self, attr_name):
+        self.attr_names.add(attr_name)
+
 
 class ClassRegistry:
     """
@@ -2287,17 +2302,19 @@ class ClassRegistry:
         self['Object'].populate_db(conn, curs)
         conn.commit()
 
-    def fix_total_children_and_datafiles(self, conn, curs):
+    def fix_post_object_data(self, conn, curs):
         """
-        Once our `total_children` metric has been populated in all the Class
-        objects (which happens as we build out the Object Registry), this will
-        update the database with all those totals.
+        Once we've walked through the entire Object Registry, there's a couple
+        of bits of data which we can loop back around and "fix" for the
+        Class entries.  This takes care of both the `total_children` metric,
+        the `num_datafiles` count, and our attribute names.
 
         This method now also updates the num_datafiles count as well, since
         that's another thing we can only know after processing objects.
         """
         for class_obj in self.classes.values():
             class_obj.fix_total_children_and_datafiles(conn, curs)
+            class_obj.store_attr_names(conn, curs)
         conn.commit()
 
     def set_aggregate_ids(self):
@@ -2601,6 +2618,7 @@ def get_object_registry(args, cr):
             cur_index = 1
             odf = None
             new_obj = None
+            inner_class = None
             for line in df:
                 if line.startswith('*** Property dump for object'):
                     if new_obj is not None:
@@ -2617,6 +2635,25 @@ def get_object_registry(args, cr):
                         odf = open(os.path.join(args.obj_dir, f'{class_obj.name}.dump.{cur_index}'), 'wt', encoding='latin1')
                         pos = 0
                         class_obj.num_datafiles += 1
+                elif line.startswith('=== '):
+                    parts = line.split(' ', 3)
+                    if len(parts) == 4 and parts[2] == 'properties':
+                        if parts[1] == 'Native':
+                            # These show up in the dumps but that's not a class, and they're not
+                            # formatted like everything else.  Make sure we don't try to do
+                            # anything with those.
+                            inner_class = None
+                        else:
+                            inner_class = cr[parts[1]]
+                elif inner_class is not None and line.startswith('  '):
+                    # If dumps have been taken without the array limit fix in place, they may
+                    # have lines like `  ... 1 more elements`.  This prevents us from trying
+                    # to read those.
+                    if not line.startswith('  ...'):
+                        attr_name = line[2:line.index('=')]
+                        if '(' in attr_name:
+                            attr_name = attr_name[:attr_name.index('(')]
+                    inner_class.add_attr(attr_name)
                 odf.write(line)
                 pos = odf.tell()
             if new_obj is not None:
@@ -2726,6 +2763,25 @@ def write_schema(conn, curs):
             unique (id, class)
         )
         """)
+    # Very custom-purpose table for autocompleting Enum names
+    curs.execute("""
+        create table enum (
+            id integer primary key autoincrement,
+            name text not null collate nocase,
+            unique (name collate nocase)
+        )
+        """)
+    # Another custom-purpose table for autocompleting attr names based
+    # on the class
+    curs.execute("""
+        create table attr_name (
+            id integer primary key autoincrement,
+            class integer not null references class (id),
+            name text not null collate nocase,
+            unique (class, name)
+        )
+        """)
+    curs.execute('create index idx_attr_name on attr_name(name collate nocase)')
     conn.commit()
 
 def main():
@@ -2759,6 +2815,12 @@ def main():
             help="Maximum data dump file size",
             )
 
+    parser.add_argument('-e', '--enum-file',
+            type=str,
+            default='enums.dat',
+            help='Location of Enum datafile, to help populate an autocomplete table',
+            )
+
     parser.add_argument('-v', '--verbose',
             action='store_true',
             help="Verbose output while running.  (Does NOT imply the various --show-* options)",
@@ -2772,6 +2834,14 @@ def main():
     # Parse args
     args = parser.parse_args()
 
+    # Doublecheck to make sure we can read our Enum datafile
+    if not os.path.exists(args.enum_file):
+        print('')
+        print(f'ERROR: "{args.enum_file}" could not be found!  You may have to copy it from')
+        print("the `resources` directory to wherever you're running this script.")
+        print('')
+        sys.exit(1)
+
     # Wipe + recreate our sqlite DB if necessary
     if args.verbose:
         print('Database:')
@@ -2784,6 +2854,33 @@ def main():
     conn = sqlite3.connect(args.sqlite)
     curs = conn.cursor()
     write_schema(conn, curs)
+
+    # Write enum info
+    if args.verbose:
+        print('Storing Enum Names')
+    enum_ignore = {
+            '<uninitialized>',
+            }
+    seen_enums = set()
+    with open(args.enum_file) as df:
+        skip_next = False
+        while True:
+            line = df.readline()
+            if not line:
+                break
+            if skip_next:
+                # This is the enum class path and class name
+                skip_next = False
+            else:
+                if line.startswith('===='):
+                    skip_next = True
+                else:
+                    stripped = line.strip()
+                    lowered = stripped.lower()
+                    if stripped not in enum_ignore and lowered not in seen_enums:
+                        seen_enums.add(lowered)
+                        curs.execute('insert into enum (name) values (?)', (stripped,))
+        conn.commit()
 
     # Get category registry
     if args.verbose:
@@ -2836,8 +2933,8 @@ def main():
     # Clean up class total_children counts
     if args.verbose:
         print('Other Updates:')
-        print(' - Cleaning up Class total_children counts')
-    cr.fix_total_children_and_datafiles(conn, curs)
+        print(' - Cleaning up remaining Class information')
+    cr.fix_post_object_data(conn, curs)
 
     # Close the DB
     curs.close()
