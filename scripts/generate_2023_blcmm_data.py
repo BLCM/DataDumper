@@ -2654,7 +2654,7 @@ def get_object_registry(args, cr):
                         if '(' in attr_name:
                             attr_name = attr_name[:attr_name.index('(')]
                     inner_class.add_attr(attr_name)
-                odf.write(line)
+                odf.write(line.lstrip())
                 pos = odf.tell()
             if new_obj is not None:
                 new_obj.bytes = odf.tell()-new_obj.file_position
