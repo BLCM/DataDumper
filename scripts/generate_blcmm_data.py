@@ -1,1845 +1,110 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # vim: set expandtab tabstop=4 shiftwidth=4:
-
-# Copyright 2019 Christopher J. Kucera
-# <cj@apocalyptech.com>
-# <http://apocalyptech.com/contact.php>
-#
-# This program is free software: you can redistribute it
-# and/or modify it under the terms of the GNU General Public License
-# as published by the Free Software Foundation, either version 3 of
-# the License, or (at your option) any later version.
-#
-# Borderlands ModCabinet Sorter is distributed in the hope that it will
-# be useful, but WITHOUT ANY WARRANTY; without even the implied
-# warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-
-# I suspect that the 'Indices' file isn't actually used anymore, and
-# may just be a remnant of a time before the .dict and .list files
-# in the main data classes.  We're generating it, regardless, though.
 
 import os
 import re
+import sys
+import time
 import lzma
+import sqlite3
 import zipfile
+import hashlib
 import argparse
+import datetime
 
-parser = argparse.ArgumentParser(description='Generate BLCMM OE Datafiles')
-parser.add_argument('-o', '--others',
-        action='store_true',
-        help='Also create an "Others" dataset',
-        )
-args = parser.parse_args()
+# NOTE: this is still a work-in-progress, and the BLCMM version which
+# uses this data hasn't been released yet (and will probably have a
+# slightly new name for the fork, when it is released)
 
-input_dir = 'categorized'
-output_dir = 'generated_blcmm_data'
+# When the BLCMM core was opensourced in 2022, we needed to reimplement the
+# Data Library components if we wanted a fully-opensource BLCMM, since those
+# parts were reserved.  This is the code to generate the required data
+# structures for this new 2023 BLCMM fork!
+#
+# The original BLCMM data library has a pretty thorough understanding of UE
+# objects, including their attributes, and had a complete object model for
+# basically everything found in the engine.  That allows for some pretty
+# nifty functionality, but at the moment that's way more work than Apocalyptech's
+# willing to spend reimplementing, in 2023.  If I ever do start digging into
+# that, I expect that'll get folded up into some generation stuff in here,
+# but for now this just generates enough metadata to support knowing about the
+# class structure, how it correlates to the objects, and the structure of the
+# whole object tree (plus where exactly to find the raw dump data).
+#
+# The core of the new data library functionality is a Sqlite3 database which
+# OE (or any other app) can use to query information about the data.  There's
+# a set of tables describing the engine class layout, and another set of tables
+# describing the object layout.  "Object" entries are technically just nodes in
+# a tree -- there may not be an object dump attached.  But the whole parent/child
+# structure lets us put in the dump info where it's applicable.
+#
+# The app expects to have a `completed` directory that was populated via
+# `categorize_data.py`, so this has to be run at the tail end of the data
+# extraction process.  You could alternatively just grab the data extracts
+# provided with FT Explorer (https://github.com/apocalyptech/ft-explorer).  That's
+# basically just the raw `completed` dir.
+#
+# While processing, in addition to creating the sqlite database, this'll
+# copy/store the dumps into a new directory with a different format.  For the
+# new BLCMM OE dumps, it'll still be categorized by class type, but there's also
+# a maximum individual file size.  That's done so that random access to object
+# dumps near the end of the file don't take a noticeable amount of time to load,
+# since those dumps will be compressed, and need to be uncompressed to seek to
+# the specified position.
+#
+# That position is found via the `object` table, in the fields `filename_index` and
+# `filename_position`.  The index is the numeric suffix of the filename, and
+# the main filename comes from the class name.  So for instance there's
+# `StaticMeshComponent.dump.0` as the first dump file, `StaticMeshComponent.dump.1`
+# as the next, and so on.  Then the `filename_position` attribute is the starting
+# byte in the specified uncompressed dump file.
+#
+# The database itself has several denormalizations done in the name of speed.
+# Theoretically, all OE interactions apart from fulltext searching (and refs, at
+# the moment, which is effectively just fulltext search) should be nice and snappy,
+# and the database structure should let us dynamically populate the Class and Object
+# trees as users click around, without having to load *everything* all at once.
+# This should let us get rid of the annoying "there are too many objects!" notifications
+# (though of course that could've been reimplemented in a less-annoying way, too).
+#
+# As mentioned elsewhere below, the denormalization does come at a cost: database size.
+# At time of writing, the uncompressed "base" database (classes, class aggregation,
+# and objects) clocks in at about 350MB.  Adding in the "shown class IDs" table (see
+# below for details on that - it's what lets the lower-left-hand Object Explorer
+# window be nice and quick) adds in another 230MB or so.
+#
+# ================================================================
+# NOTE: ASSUMPTIONS ABOUT THE DATABASE WHICH BLCMM'S OE RELIES ON:
+# ================================================================
+#
+#   1. The `class.id` numbering starts at 1 for the first valid object (ResultSet
+#      objects will end up with `0` for integer values when they're null -- you
+#      can explicitly check for null after getting the value, but since sqlite
+#      autoincrement PKs are already 1-indexed, we're not bothering).
+#
+#   2. There is a single root `class` element, which is `id` 1 (and is the first
+#      row in the database.  (This happens to be named `Object`, but BLCMM
+#      doesn't actually care about that.)
+#
+#   3. When ordered by `id`, the `class` table rows are in "tree" order -- as in,
+#      there will *never* be a `parent` field whose row we haven't already seen.
+#
+#   4. Datafile filename indexes start at 1, for the same reason as point #1 above.
+#
+#   5. BLCMM OE expects the `categories` keys to be those exact names in the
+#      database, including the code-added `Others` category.  It'll refuse
+#      to load the data if they aren't all found.  New categories in here
+#      will also require a BLCMM update.
+#
+#   6. BLCMM relies on the text indexes in the DB being case-insensitive
+#      (at least for `object.name` -- the others may not be as important)
 
-# Detect game
-game = 'BL2'
-for filename in os.listdir(input_dir):
-    if filename.startswith('Oz'):
-        game = 'TPS'
-        break
-
-dump_start_re = re.compile('^\*\*\* Property dump for object \'(\S+) (\S+)\' \*\*\*\s*')
-
-blcmm_orgs = {
-    'BL2': {
+# Categories for user to choose for fulltext search.  This list is kind of a
+# conglomeration of both BL2 and TPS classtypes, but it won't result in any
+# strange stuff in the database -- apart from the category names, these only
+# exist in the DB as foreign keys into the categories table.
+categories = {
         'Actions': {
-            'ActionSequence',
-            'ActionSequenceList',
-            'ActionSequencePawn',
-            'ActionSequenceRandom',
-            'Action_AimAtScanRange',
-            'Action_AimAtThreat',
-            'Action_AnimAttack',
-            'Action_AttackLoop',
-            'Action_BasicAttack',
-            'Action_BikeMove',
-            'Action_BunkerBoss_Flight',
-            'Action_Burrow',
-            'Action_BurrowIdle',
-            'Action_ChangeRuleSet',
-            'Action_ChargeTarget',
-            'Action_CombatPerch',
-            'Action_CombatPoint',
-            'Action_CoverAttack',
-            'Action_DeathTrap',
-            'Action_DriveVehicle',
-            'Action_Drive_AlongsideTarget',
-            'Action_Drive_AvoidWall',
-            'Action_Drive_BackUpAndAdjust',
-            'Action_Drive_GoBackToCombatArea',
-            'Action_Drive_Pursuit',
-            'Action_Drive_Pursuit_TargetOnFoot',
-            'Action_FaceThreat',
-            'Action_FinalBoss',
-            'Action_FinalBossFly',
-            'Action_FlyAnimAttack',
-            'Action_FollowPath',
-            'Action_GenericAttack',
-            'Action_GoToScriptedDestination',
-            'Action_GrabPickup',
-            'Action_Idle',
-            'Action_LeapAtTarget',
-            'Action_MortarAttack',
-            'Action_MoveRandom',
-            'Action_MoveTo',
-            'Action_MoveToFormation',
-            'Action_MoveToVehicle',
-            'Action_Patrol',
-            'Action_PawnMovementBase',
-            'Action_PlayCustomAnimation',
-            'Action_PopRuleSet',
-            'Action_PushRuleSet',
-            'Action_ScriptedNPC',
-            'Action_SetFlight',
-            'Action_ShootTarget',
-            'Action_ShootThreatWhenInView',
-            'Action_SweepAttack',
-            'Action_SwoopAttack',
-            'Action_VehicleTurret',
-            'WillowActionSequencePawn',
-            },
-        'AI': {
-            'AIComponent',
-            'WillowAIBlackboardComponent',
-            'WillowAIComponent',
-            'WillowAIDenComponent',
-            'WillowAIEncounterComponent',
-            'AIDefinition',
-            'WillowAIDefinition',
-            'WillowAIDenDefinition',
-            'AIPawnBalanceModifierDefinition',
-            'AIPawnBalanceDefinition',
-            'AIClassDefinition',
-            'AIController',
-            'GearboxAIController',
-            'GearboxMind',
-            'WillowMind',
-            'AICostExpressionEvaluator',
-            'DeployableTurretActor',
-            'WillowAICranePawn',
-            'WillowAIPawn',
-            'AIResource',
-            },
-        'Animations': {
-            'AnimMetaData_SkelControl',
-            'AnimMetaData_SkelControlKeyFrame',
-            'AnimNotify_AkEvent',
-            'AnimNotify_CameraEffect',
-            'AnimNotify_ClothingMaxDistanceScale',
-            'AnimNotify_CustomEvent',
-            'AnimNotify_DialogEvent',
-            'AnimNotify_EnableHandIK',
-            'AnimNotify_EnableHeadLookAt',
-            'AnimNotify_Footstep',
-            'AnimNotify_ForceField',
-            'AnimNotify_Kismet',
-            'AnimNotify_PawnMaterialParam',
-            'AnimNotify_PlayFaceFXAnim',
-            'AnimNotify_PlayParticleEffect',
-            'AnimNotify_Rumble',
-            'AnimNotify_Script',
-            'AnimNotify_Sound',
-            'AnimNotify_SoundSpatial',
-            'AnimNotify_Trails',
-            'AnimNotify_UseBehavior',
-            'AnimNotify_ViewShake',
-            'AnimNode',
-            'AnimNodeAdditiveBlending',
-            'AnimNodeAimOffset',
-            'AnimNodeBlend',
-            'AnimNodeBlendBase',
-            'AnimNodeBlendByBase',
-            'AnimNodeBlendByPhysics',
-            'AnimNodeBlendByPosture',
-            'AnimNodeBlendByProperty',
-            'AnimNodeBlendBySpeed',
-            'AnimNodeBlendDirectional',
-            'AnimNodeBlendList',
-            'AnimNodeBlendMultiBone',
-            'AnimNodeBlendPerBone',
-            'AnimNodeCrossfader',
-            'AnimNodeMirror',
-            'AnimNodePlayCustomAnim',
-            'AnimNodeRandom',
-            'AnimNodeScalePlayRate',
-            'AnimNodeScaleRateBySpeed',
-            'AnimNodeSequence',
-            'AnimNodeSequenceBlendBase',
-            'AnimNodeSequenceBlendByAim',
-            'AnimNodeSlot',
-            'AnimNodeSpecialMoveBlend',
-            'AnimNodeSynch',
-            'AnimNode_MultiBlendPerBone',
-            'AnimObject',
-            'AnimTree',
-            'GameSkelCtrl_Recoil',
-            'MorphNodeBase',
-            'MorphNodeMultiPose',
-            'MorphNodePose',
-            'MorphNodeWeight',
-            'MorphNodeWeightBase',
-            'MorphNodeWeightByBoneAngle',
-            'MorphNodeWeightByBoneRotation',
-            'SkelControlBase',
-            'SkelControlFootPlacement',
-            'SkelControlHandModifier',
-            'SkelControlHandlebars',
-            'SkelControlLeftHandGripWeapon',
-            'SkelControlLimb',
-            'SkelControlLookAt',
-            'SkelControlSingleBone',
-            'SkelControlSpline',
-            'SkelControlTrail',
-            'SkelControlWheel',
-            'SkelControl_CCD_IK',
-            'SkelControl_Multiply',
-            'SkelControl_TwistBone',
-            'WillowAnimBlendByPosture',
-            'WillowAnimNodeAimOffset',
-            'WillowAnimNodeAimOffset_BoundaryTurret',
-            'WillowAnimNodeBlendByAimState',
-            'WillowAnimNodeBlendByRotationSpeed',
-            'WillowAnimNodeBlendByStance',
-            'WillowAnimNodeBlendDirectional',
-            'WillowAnimNodeBlendInjured',
-            'WillowAnimNodeBlendList',
-            'WillowAnimNodeBlendSwitch',
-            'WillowAnimNodeBlendThirdPersonMenu',
-            'WillowAnimNodeBlendTurning',
-            'WillowAnimNodeBlendVehicleDirectional',
-            'WillowAnimNodeBlendWheeledPawn',
-            'WillowAnimNodeFeatherBlend',
-            'WillowAnimNodeSequence',
-            'WillowAnimNodeSequenceAdditiveBlend',
-            'WillowAnimNodeSlot',
-            'WillowAnimNode_AddCameraBone',
-            'WillowAnimNode_AimState',
-            'WillowAnimNode_Audio',
-            'WillowAnimNode_ClimbLadder',
-            'WillowAnimNode_Condition',
-            'WillowAnimNode_Falling',
-            'WillowAnimNode_MovementTransition',
-            'WillowAnimNode_Prism',
-            'WillowAnimNode_Simple',
-            'WillowAnimNode_WeaponHold',
-            'WillowAnimNode_WeaponRecoil',
-            'WillowAnimTree',
-            'WillowSkelControlHandPlacement',
-            'WillowSkelControlLerpSingleBone',
-            'WillowSkelControlSpline',
-            'WillowSkelControl_EyelidLook',
-            'WillowSkelControl_FootPlacement',
-            'WillowSkelControl_LeftLowerEyelidLook',
-            'WillowSkelControl_LeftUpperEyelidLook',
-            'WillowSkelControl_LookAtActor',
-            'WillowSkelControl_LowerEyelidLook',
-            'WillowSkelControl_RightLowerEyelidLook',
-            'WillowSkelControl_RightUpperEyelidLook',
-            'WillowSkelControl_RotateFlapFromFiring',
-            'WillowSkelControl_RotateWeaponBoneFromFiring',
-            'WillowSkelControl_RotationRate',
-            'WillowSkelControl_RotationRateBySpeed',
-            'WillowSkelControl_TurretConstrained',
-            'WillowSkelControl_UpperEyelidLook',
-            'WillowStaggerAnimNodeBlend',
-            'AnimSet',
-            },
-        #'Animation Sequences': {
-        #    'AnimSequence',
-        #    },
-        'Base':
-            {
-            'AnemoneInfectionDefinition',
-            'AnemoneInfectionState',
-            'AccessControl',
-            'WillowAccessControl',
-            'ActionSkill',
-            'BuzzaxeActionSkill',
-            'DeathtrapActionSkill',
-            'DualWieldActionSkill',
-            'ExecuteActionSkill',
-            'LiftActionSkill',
-            'ScorpioActionSkill',
-            'AIState',
-            'AIStateBase',
-            'AIState_Priority',
-            'AIState_Random',
-            'AIState_Sequential',
-            'BestTargetAttributeContextResolver',
-            'DesignerAttributeContextResolver',
-            'EquippedInventoryAttributeContextResolver',
-            'InstanceDataContextResolver',
-            'InventoryAttributeContextResolver',
-            'ObjectPropertyContextResolver',
-            'ResourcePoolAttributeContextResolver',
-            'SkillAttributeContextResolver',
-            'WeaponResourcePoolAttributeContextResolver',
-            'AttributeDefinition',
-            'AttributeDefinitionBase',
-            'AttributeDefinitionMultiContext',
-            'DesignerAttributeDefinition',
-            'InventoryAttributeDefinition',
-            'NestedAttributeDefinition',
-            'ResourcePoolAttributeDefinition',
-            'AttributeInitializationDefinition',
-            'AttributeModifier',
-            'AttributePresentationDefinition',
-            'WeaponStatusEffectAttributePresentationDefinition',
-            'AttributePresentationListDefinition',
-            'AIResourceAttributeValueResolver',
-            'AmmoDropWeightAttributeValueResolver',
-            'AmmoResourceUpgradeAttributeValueResolver',
-            'AttributeSlotEffectAttributeValueResolver',
-            'BadassAttributeValueResolver',
-            'BlackMarketUpgradeAttributeValueResolver',
-            'ClassDropWeightValueResolver',
-            'ConditionalAttributeValueResolver',
-            'ConstantAttributeValueResolver',
-            'ConstraintAttributeValueResolver',
-            'CurrencyAttributeValueResolver',
-            'DamageTypeAttributeValueResolver',
-            'GlobalAttributeValueResolver',
-            'ManufacturerAttributeValueResolver',
-            'NounAttributeValueResolver',
-            'ObjectFunctionAttributeValueResolver',
-            'ObjectPropertyAttributeValueResolver',
-            'PlayThroughCountAttributeValueResolver',
-            'PlayerClassAttributeValueResolver',
-            'PlayerClassCountAttributeValueResolver',
-            'PlayerSkillAttributeValueResolver',
-            'PlayerStatAttributeValueResolver',
-            'RandomAttributeValueResolver',
-            'ReadOnlyObjectPropertyAttributeValueResolver',
-            'ResourcePoolStateAttributeValueResolver',
-            'SimpleMathValueResolver',
-            'StateAttributeResolver',
-            'TargetMetaInfoValueResolver',
-            'TargetableAttributeValueResolver',
-            'TimeValueResolver',
-            'WeaponAmmoResourceAttributeValueResolver',
-            'WeaponTypeAttributeValueResolver',
-            'BadassRewardDefinition',
-            'BalanceModifierDefinition',
-            'ClassModBalanceDefinition',
-            'InteractiveObjectBalanceDefinition',
-            'InventoryBalanceDefinition',
-            'ItemBalanceDefinition',
-            'MissionWeaponBalanceDefinition',
-            'VehicleBalanceDefinition',
-            'WeaponBalanceDefinition',
-            'BodyHitRegionDefinition',
-            'BehaviorEventFilterBase',
-            'EventFilter_OnTakeDamage',
-            'EventFilter_OnTouch',
-            'BehaviorHelpers',
-            'BlackMarketDefinition',
-            'BlackMarketUpgradeDefinition',
-            'BlackMarketUpgradeManager',
-            'BodyClassDefinition',
-            'CharacterClassDefinition',
-            'PlayerClassDefinition',
-            'WillowCharacterClassDefinition',
-            'CheatManager',
-            'GearboxCheatManager',
-            'WillowCheatManager',
-            'Commandlet',
-            'HelpCommandlet',
-            'PatchScriptCommandlet',
-            'ServerCommandlet',
-            'SmokeTestCommandlet',
-            'Admin',
-            'Controller',
-            'DebugCameraController',
-            'PlayerController',
-            'CustomizationDefinition',
-            'CustomizationType',
-            'CustomizationType_Head',
-            'CustomizationType_Skin',
-            'DamagePipeline',
-            'WillowDamagePipeline',
-            'DamageType',
-            'DmgType_Crushed',
-            'DmgType_Fell',
-            'DmgType_Suicided',
-            'DmgType_Telefragged',
-            'KillZDamageType',
-            'WillowDamageSource',
-            'WillowDamageType',
-            'WillowDamageType_Bullet',
-            'WillowDmgSource_Bullet',
-            'WillowDmgSource_CustomCrate',
-            'WillowDmgSource_Grenade',
-            'WillowDmgSource_MachineGun',
-            'WillowDmgSource_Melee',
-            'WillowDmgSource_MeleeWithBlade',
-            'WillowDmgSource_Pistol',
-            'WillowDmgSource_Rocket',
-            'WillowDmgSource_Shield',
-            'WillowDmgSource_ShieldNova',
-            'WillowDmgSource_ShieldSpike',
-            'WillowDmgSource_Shotgun',
-            'WillowDmgSource_Skill',
-            'WillowDmgSource_Skill_IgnoreIOs',
-            'WillowDmgSource_Sniper',
-            'WillowDmgSource_StatusEffect',
-            'WillowDmgSource_SubMachineGun',
-            'WillowDmgSource_VehicleRanInto',
-            'WillowDmgSource_VehicleRanOver',
-            'WillowDmgType_VehicleCollision',
-            'WillowDamageTypeDefinition',
-            'DownloadableBalanceModifierDefinition',
-            'DownloadableCharacterDefinition',
-            'DownloadableContentDefinition',
-            'DownloadableCustomizationSetDefinition',
-            'DownloadableExpansionDefinition',
-            'DownloadableItemSetDefinition',
-            'DownloadableVehicleDefinition',
-            'DownloadableContentManager',
-            'WillowDownloadableContentManager',
-            'DownloadableContentOfferEnumerator',
-            'ExplosionDefinition',
-            'AIResourceExpressionEvaluator',
-            'ActionSkillStateExpressionEvaluator',
-            'AllegianceExpressionEvaluator',
-            'AttributeExpressionEvaluator',
-            'CompoundExpressionEvaluator',
-            'DialogNameTagExpressionEvaluator',
-            'ExpressionTree',
-            'FlagExpressionEvaluator',
-            'HealthStateExpressionEvaluator',
-            'NumberWeaponsEquippedExpressionEvaluator',
-            'PhysicsStateExpressionEvaluator',
-            'PlayerActionExpressionEvaluator',
-            'PostureStateExpressionEvaluator',
-            'SkillExpressionEvaluator',
-            'StanceExpressionEvaluator',
-            'StatusEffectExpressionEvaluator',
-            'VehiclePassengerExpressionEvaluator',
-            'WeaponEquippedExpressionEvaluator',
-            'FiringModeDefinition',
-            'FlagDefinition',
-            'FromContextFlagValueResolver',
-            'MultipleFlagValueResolver',
-            'ObjectFunctionFlagValueResolver',
-            'ObjectPropertyFlagValueResolver',
-            'TransformedFlagValueResolver',
-            'GameInfo',
-            'GearboxGameInfo',
-            'PlayerCollectorGame',
-            'WillowCoopGameInfo',
-            'WillowGameInfo',
-            'GamePawn',
-            'GearboxPawn',
-            'WillowPawn',
-            'GamePlayerController',
-            'GearboxPlayerController',
-            'GameplayEvents',
-            'GameplayEventsReader',
-            'GameplayEventsWriter',
-            'GameStateObject',
-            'GameStatsAggregator',
-            'GameplayEventsHandler',
-            'AdvancedAxisDefinition',
-            'AwarenessZoneCollectionDefinition',
-            'AwarenessZoneDefinition',
-            'BankGFxDefinition',
-            'BodyClassDeathDefinition',
-            'BodyRegionProtectionDefinition',
-            'BodyWeaponHoldDefinition',
-            'CarVehicleHandlingDefinition',
-            'ChallengeCategoryDefinition',
-            'ChallengeConditionDefinition',
-            'ChallengeDefinition',
-            'CharacterClassMessageDefinition',
-            'ChassisDefinition',
-            'ChopperVehicleHandlingDefinition',
-            'ColiseumRuleDefinition',
-            'CombatMusicParameters',
-            'CoordinatedEffectDefinition',
-            'CoverSearchCriteria',
-            'CreditsGFxDefinition',
-            'CreditsLineDefinition',
-            'CurrencyListDefinition',
-            'CustomizationData',
-            'CustomizationData_Head',
-            'CustomizationData_Skin',
-            'CustomizationGFxDefinition',
-            'CustomizationUsage',
-            'CustomizationUsage_Assassin',
-            'CustomizationUsage_BanditTech',
-            'CustomizationUsage_ExtraPlayerA',
-            'CustomizationUsage_ExtraPlayerB',
-            'CustomizationUsage_ExtraPlayerC',
-            'CustomizationUsage_ExtraPlayerD',
-            'CustomizationUsage_ExtraPlayerE',
-            'CustomizationUsage_ExtraPlayerF',
-            'CustomizationUsage_ExtraPlayerG',
-            'CustomizationUsage_ExtraPlayerH',
-            'CustomizationUsage_ExtraPlayerI',
-            'CustomizationUsage_ExtraPlayerJ',
-            'CustomizationUsage_ExtraPlayerK',
-            'CustomizationUsage_ExtraPlayerL',
-            'CustomizationUsage_ExtraPlayerM',
-            'CustomizationUsage_ExtraPlayerN',
-            'CustomizationUsage_ExtraPlayerO',
-            'CustomizationUsage_ExtraPlayerP',
-            'CustomizationUsage_FanBoat',
-            'CustomizationUsage_Hovercraft',
-            'CustomizationUsage_Mercenary',
-            'CustomizationUsage_Player',
-            'CustomizationUsage_Runner',
-            'CustomizationUsage_Siren',
-            'CustomizationUsage_Soldier',
-            'CustomizationUsage_Vehicle',
-            'DLCLegacyPlayerClassIdentifierDefinition',
-            'DefinitionGlobalsDefinition',
-            'DefinitionUITestCaseDefinition',
-            'DownloadableFixupAIPawnNamesDefinition',
-            'ExplosionCollectionDefinition',
-            'ExpressionEvaluatorDefinition',
-            'FastTravelStationsListOrder',
-            'FeatherBoneBlendDefinition',
-            'FiringBehaviorDefinition',
-            'FiringModeSoundDefinition',
-            'FiringZoneCollectionDefinition',
-            'FiringZoneDefinition',
-            'FocusCameraDefinition',
-            'FractalViewWanderingDefinition',
-            'FrontendGFxMovieDefinition',
-            'GFxManagerDefinition',
-            'GFxMovieDefinition',
-            'GFxTextListDefinition',
-            'GameBalanceDefinition',
-            'GameReleaseDefinition',
-            'GammaScreenGFxDefinition',
-            'GbxMessageDefinition',
-            'GearboxAnimDefinition',
-            'GearboxCalloutDefinition',
-            'GearboxEULAGFxMovieDefinition',
-            'GenericReviveMessageDefinition',
-            'GestaltPartMatricesCollectionDefinition',
-            'HUDDefinition',
-            'HUDScalingAnchorDefinition',
-            'HashDisplayGFxDefinition',
-            'HoverVehicleHandlingDefinition',
-            'InjuredDefinition',
-            'InputDeviceCollectionDefinition',
-            'InputDeviceDefinition',
-            'InputRemappingDefinition',
-            'InputSetDefinition',
-            'InteractionIconDefinition',
-            'InventoryCardPresentationDefinition',
-            'ItemInspectionGFxMovieDefinition',
-            'ItemPickupGFxDefinition',
-            'LocalizedStringDefinition',
-            'LookAxisDefinition',
-            'LootConfigurationDefinition',
-            'MarketingUnlockDefinition',
-            'MarketingUnlockInventoryDefinition',
-            'MarketplaceGFxMovieDefinition',
-            'NameListDefinition',
-            'PassengerCameraDefinition',
-            'PawnInteractionDefinition',
-            'PerchDefinition',
-            'PersonalTeleporterDefinition',
-            'PhaseLockDefinition',
-            'PlayerChallengeListDefinition',
-            'PlayerEventProviderDefinition',
-            'PlayerNameIdentifierDefinition',
-            'PlayerTrainingMessageListDefinition',
-            'RootMotionDefinition',
-            'RuleEventDef',
-            'SkillExpressionEvaluatorDefinition',
-            'SkillTreeGFxDefinition',
-            'SpecialMoveDefinition',
-            'SpecialMoveExpressionList',
-            'SpecialMoveRandom',
-            'SpecialMove_FirstPerson',
-            'SpecialMove_FirstPersonDualWieldAction',
-            'SpecialMove_FirstPersonOffHand',
-            'SprintDefinition',
-            'StaggerDefinition',
-            'StanceTypeDefinition',
-            'StatusMenuGFxDefinition',
-            'TankVehicleHandlingDefinition',
-            'TargetingDefinition',
-            'TestMapsListDefinition',
-            'TextMarkupDictionary',
-            'TradingGFxDefinition',
-            'TrainingMessageDefinition',
-            'TurnDefinition',
-            'TwoPanelInterfaceGFxDefinition',
-            'VSSUIDefinition',
-            'VehicleClassDefinition',
-            'VehicleFamilyDefinition',
-            'VehicleHandlingDefinition',
-            'VehicleSpawnStationGFxDefinition',
-            'VehicleSpawnStationVehicleDefinition',
-            'VehicleWheelDefinition',
-            'VendingMachineExGFxDefinition',
-            'VendingMachineGFxDefinition',
-            'WeaponGlowEffectDefinition',
-            'WeaponPartListDefinition',
-            'WeaponScopeGFxDefinition',
-            'WillowAutoAimProfileDefinition',
-            'WillowAutoAimStrategyDefinition',
-            'WillowAwarenessZoneDefinition',
-            'WillowCalloutDefinition',
-            'WillowCoverStanceDefinition',
-            'WillowGFxColiseumOverlayDefinition',
-            'WillowGFxMovie3DDefinition',
-            'WillowGFxThirdPersonDefinition',
-            'WillowGFxUIManagerDefinition',
-            'WillowHUDGFxMovieDefinition',
-            'WillowInventoryGFxDefinition',
-            'WillowLevelTimerDefinition',
-            'WillowPawnInteractionDefinition',
-            'WillowPursuitGridDefinition',
-            'WillowVehicleControlDefinition',
-            'WillowVehicleSeatDefinition',
-            'WillowVersusDuelGlobals',
-            'GearboxAccountActions',
-            'GearboxAccountEntitlement',
-            'GearboxEngineGlobals',
-            'GearboxGlobals',
-            'WillowGlobals',
-            'GearboxGlobalsDefinition',
-            'GlobalsDefinition',
-            'GearboxProcess',
-            'WillowExplosionImpactDefinition',
-            'WillowImpactDefinition',
-            'InputActionDefinition',
-            'InputContextDefinition',
-            'InteractiveObjectDefinition',
-            'VehicleSpawnStationPlatformDefinition',
-            'WillowVendingMachineDefinition',
-            'InteractiveObjectLootListDefinition',
-            'InventoryPartListCollectionDefinition',
-            'ItemPartListCollectionDefinition',
-            'WeaponPartListCollectionDefinition',
-            'ItemPartListDefinition',
-            'CrossDLCItemPoolDefinition',
-            'ItemPoolDefinition',
-            'KeyedItemPoolDefinition',
-            'ItemPoolListDefinition',
-            'JsonObject',
-            'KAsset',
-            'KAssetSpawnable',
-            'AkAmbientSound',
-            'AmbientSound',
-            'Keypoint',
-            'PathTargetPoint',
-            'StationTeleporterExitPoint',
-            'StationTeleporterVehicleExitPoint',
-            'TargetPoint',
-            'WwiseSoundGroup',
-            'Level',
-            'LevelDependencyList',
-            'LevelStreaming',
-            'LevelStreamingAlwaysLoaded',
-            'LevelStreamingDistance',
-            'LevelStreamingDomino',
-            'LevelStreamingKismet',
-            'LevelStreamingPersistent',
-            'LeviathanService',
-            'ChallengeFeedbackMessage',
-            'ExperienceFeedbackMessage',
-            'FailedConnect',
-            'FastTravelStationDiscoveryMessage',
-            'GameMessage',
-            'InjuredFeedbackMessage',
-            'LocalInventoryRefreshMessage',
-            'LocalItemMessage',
-            'LocalMapChangeMessage',
-            'LocalMessage',
-            'LocalTrainingDefinitionMessage',
-            'LocalTrainingMessage',
-            'LocalWeaponMessage',
-            'MissionFeedbackMessage',
-            'OpenedChestMessage',
-            'ReceivedAmmoMessage',
-            'ReceivedCreditsMessage',
-            'ReceivedItemMessage',
-            'ReceivedWeaponMessage',
-            'SkillPointsFeedbackMessage',
-            'TeleporterFeedbackMessage',
-            'WeaponProficiencyFeedbackMessage',
-            'WillowGameMessage',
-            'WillowLocalMessage',
-            'WillowLockWarningMessage',
-            'WillowPickupMessage',
-            'WillowVersusDuelMessage',
-            'LockoutDefinition',
-            'ManufacturerDefinition',
-            'WillowMapInfo',
-            'MeleeDefinition',
-            'MeshComponent',
-            'DrunkenBaseComponent',
-            'DrunkenRandomComponent',
-            'DrunkenWaveComponent',
-            'MovementComponent',
-            'DemoRecDriver',
-            'NetDriver',
-            'TcpNetDriver',
-            'OnlineGameInterfaceImpl',
-            'GearboxProfileSettings',
-            'OnlinePlayerStorage',
-            'OnlineProfileSettings',
-            'PMESTG_LeaveADecalBase',
-            'MatineePawn',
-            'Pawn',
-            'SVehicle',
-            'Scout',
-            'Vehicle',
-            'WillowScout',
-            'PawnAllegiance',
-            'PersistentGameDataManager',
-            'PhysXParticleSystem',
-            'ChildConnection',
-            'DemoRecConnection',
-            'IpNetConnectionSteamworks',
-            'IpNetConnectionEpicStore',
-            'LocalPlayer',
-            'NetConnection',
-            'Player',
-            'TcpipConnection',
-            'PlayerClassIdentifierDefinition',
-            'VehicleSeatSwap_PlayerInteractionClient',
-            'PlayerSkillTree',
-            'PlayerStart',
-            'WillowCoopPlayerStart',
-            'PopulationMaster',
-            'Projectile',
-            'WillowLocalOnlyProjectile',
-            'WillowProjectile',
-            'WillowServerSideProjectile',
-            'ProjectileDefinition',
-            'CoverReplicator',
-            'GameReplicationInfo',
-            'GearboxPlayerReplicationInfo',
-            'PlayerReplicationInfo',
-            'ReplicationInfo',
-            'ResourcePoolManager',
-            'TeamInfo',
-            'WillowGameReplicationInfo',
-            'WillowVersusDuelInfo',
-            'ResourceDefinition',
-            'AmmoResourcePool',
-            'ExperienceResourcePool',
-            'HealthResourcePool',
-            'ResourcePool',
-            'ShieldResourcePool',
-            'ResourcePoolDefinition',
-            'OnlineGameSettings',
-            'Settings',
-            'SkillDefinition',
-            'SkillEffectManager',
-            'SkillTreeBranchDefinition',
-            'SkillTreeBranchLayoutDefinition',
-            'SkillTreeDefinition',
-            'SparkInterfaceImpl',
-            'SparkServiceConfiguration',
-            'SparkTypes',
-            'SplitscreenHelper',
-            'StatusEffectDefinition',
-            'StatusEffectProxyActor',
-            'StatusEffectsComponent',
-            'HoldingAreaDestination',
-            'StationTeleporterDestination',
-            'TeleporterDestination',
-            'WillowPersonalTeleporter',
-            'FastTravelStationDefinition',
-            'LevelTravelStationDefinition',
-            'TravelStationDefinition',
-            'FixedMarker',
-            'InteractionProxy',
-            'PawnInteractionProxy',
-            'Trigger',
-            'TriggerStreamingLevel',
-            'Trigger_PawnsOnly',
-            'LevelTransitionWaypointComponent',
-            'WaypointComponent',
-            'WillowBaseStats',
-            'WillowClanDefinition',
-            'ArtifactDefinition',
-            'BuzzaxeWeaponTypeDefinition',
-            'ClassModDefinition',
-            'CrossDLCClassModDefinition',
-            'EquipableItemDefinition',
-            'GrenadeModDefinition',
-            'ItemDefinition',
-            'MissionItemDefinition',
-            'ShieldDefinition',
-            'TurretWeaponTypeDefinition',
-            'UsableCustomizationItemDefinition',
-            'UsableItemDefinition',
-            'VehicleWeaponTypeDefinition',
-            'WeaponTypeDefinition',
-            'WillowInventoryDefinition',
-            'ArtifactPartDefinition',
-            'ClassModPartDefinition',
-            'EquipableItemPartDefinition',
-            'GrenadeModPartDefinition',
-            'ItemNamePartDefinition',
-            'ItemPartDefinition',
-            'MissionItemPartDefinition',
-            'ShieldPartDefinition',
-            'UsableItemPartDefinition',
-            'WeaponNamePartDefinition',
-            'WeaponPartDefinition',
-            'WillowInventoryPartDefinition',
-            'WillowSystemSettings',
-            'WorldInfo',
-            },
-        'Behaviors': {
-            'BehaviorBase',
-            'Behavior_AIChangeInventory',
-            'Behavior_AICloak',
-            'Behavior_AIFollow',
-            'Behavior_AIHold',
-            'Behavior_AILevelUp',
-            'Behavior_AIPatsy',
-            'Behavior_AIPriority',
-            'Behavior_AIProvoke',
-            'Behavior_AIResetProvocation',
-            'Behavior_AISetFlight',
-            'Behavior_AISetItemTossTarget',
-            'Behavior_AISetWeaponFireRotation',
-            'Behavior_AITakeMoney',
-            'Behavior_AITargeting',
-            'Behavior_AIThrowProjectileAtTarget',
-            'Behavior_ActivateInstancedMissionBehaviorSequence',
-            'Behavior_ActivateListenerSkill',
-            'Behavior_ActivateMission',
-            'Behavior_AddInstanceData',
-            'Behavior_AddInstanceDataFromBehaviorContext',
-            'Behavior_AddInventoryToStorage',
-            'Behavior_AddMissionDirectives',
-            'Behavior_AddMissionTime',
-            'Behavior_AddObjectInstanceData',
-            'Behavior_AdjustCameraAnimByEyeHeight',
-            'Behavior_AdvanceObjectiveSet',
-            'Behavior_AssignBoolVariable',
-            'Behavior_AssignFloatVariable',
-            'Behavior_AssignIntVariable',
-            'Behavior_AssignObjectVariable',
-            'Behavior_AssignVectorVariable',
-            'Behavior_AttachAOEStatusEffect',
-            'Behavior_AttachActor',
-            'Behavior_AttemptItemCallout',
-            'Behavior_AwardExperienceForMyDeath',
-            'Behavior_BeginLifting',
-            'Behavior_BoolMath',
-            'Behavior_BroadcastEcho',
-            'Behavior_CallFunction',
-            'Behavior_CauseTinnitus',
-            'Behavior_ChangeAnyBehaviorSequenceState',
-            'Behavior_ChangeBehaviorSetState',
-            'Behavior_ChangeBoneVisibility',
-            'Behavior_ChangeCanTarget',
-            'Behavior_ChangeCollision',
-            'Behavior_ChangeCollisionSize',
-            'Behavior_ChangeCounter',
-            'Behavior_ChangeDenAllegiance',
-            'Behavior_ChangeDialogName',
-            'Behavior_ChangeEnvironmentTag',
-            'Behavior_ChangeInstanceDataSwitch',
-            'Behavior_ChangeLocalBehaviorSequenceState',
-            'Behavior_ChangeParticleSystemActiveState',
-            'Behavior_ChangeRemoteBehaviorSequenceState',
-            'Behavior_ChangeScale',
-            'Behavior_ChangeSkillBehaviorSequenceState',
-            'Behavior_ChangeSpin',
-            'Behavior_ChangeTimer',
-            'Behavior_ChangeUsability',
-            'Behavior_ChangeVisibility',
-            'Behavior_ChangeWeaponVisibility',
-            'Behavior_CheckMapChangeConditions',
-            'Behavior_ClearObjective',
-            'Behavior_ClearStatusEffects',
-            'Behavior_ClientConsoleCommand',
-            'Behavior_CombatPerch',
-            'Behavior_CombatPerchThrow',
-            'Behavior_CompareObject',
-            'Behavior_CompleteMission',
-            'Behavior_ConsoleCommand',
-            'Behavior_ConvertInstanceDataIntoPhysicsActor',
-            'Behavior_CoordinatedEffect',
-            'Behavior_Crane',
-            'Behavior_CreateImpactEffect',
-            'Behavior_CreateWeatherSystem',
-            'Behavior_CustomAnimation',
-            'Behavior_CustomEvent',
-            'Behavior_DamageArea',
-            'Behavior_DamageClassSwitch',
-            'Behavior_DamageSourceSwitch',
-            'Behavior_DamageSurfaceTypeSwitch',
-            'Behavior_DebugMessage',
-            'Behavior_DecrementObjective',
-            'Behavior_DestroyBeams',
-            'Behavior_DestroyBeamsForSource',
-            'Behavior_DestroyWeatherSystem',
-            'Behavior_DetachActor',
-            'Behavior_DisableFallingDamage',
-            'Behavior_DiscoverLevelChallengeObject',
-            'Behavior_DropItems',
-            'Behavior_DropProjectile',
-            'Behavior_DuplicateInstanceData',
-            'Behavior_EnterVehicle',
-            'Behavior_FailMission',
-            'Behavior_FinishLifting',
-            'Behavior_FireBeam',
-            'Behavior_FireCustomSkillEvent',
-            'Behavior_FireShot',
-            'Behavior_FollowAllegiance',
-            'Behavior_ForceDownState',
-            'Behavior_ForceInjured',
-            'Behavior_GFxMoviePlay',
-            'Behavior_GFxMovieRegister',
-            'Behavior_GFxMovieSetState',
-            'Behavior_GFxMovieStop',
-            'Behavior_Gate',
-            'Behavior_GetClosestPlayer',
-            'Behavior_GetItemPrice',
-            'Behavior_GetPlayerStat',
-            'Behavior_GetVelocity',
-            'Behavior_GiveChallengeToPlayer',
-            'Behavior_GiveInjuredPlayerSecondWind',
-            'Behavior_HasMissions',
-            'Behavior_HeadLookHold',
-            'Behavior_IncrementOverpowerLevel',
-            'Behavior_IncrementPlayerStat',
-            'Behavior_IntMath',
-            'Behavior_IntSwitchRange',
-            'Behavior_InterpolateFloatOverTime',
-            'Behavior_IsCensoredMode',
-            'Behavior_IsObjectPlayer',
-            'Behavior_IsObjectVehicle',
-            'Behavior_IsSequenceEnabled',
-            'Behavior_Kill',
-            'Behavior_LeaderCommand',
-            'Behavior_LeapAtTarget',
-            'Behavior_LocalCustomEvent',
-            'Behavior_MakeVector',
-            'Behavior_MatchTransform',
-            'Behavior_MeleeAttack',
-            'Behavior_MissionCustomEvent',
-            'Behavior_MissionRemoteEvent',
-            'Behavior_ModifyTimer',
-            'Behavior_NetworkRoleSwitch',
-            'Behavior_NotifyThoughtLockStatus',
-            'Behavior_ObjectClassSwitch',
-            'Behavior_OpinionSwitch',
-            'Behavior_OverrideWeaponCrosshair',
-            'Behavior_PackAttack',
-            'Behavior_PawnLeap',
-            'Behavior_PhaseLockHold',
-            'Behavior_PhysXLevel',
-            'Behavior_PlayAIMissionContextDialog',
-            'Behavior_PlayAnimation',
-            'Behavior_PlayHardFlinch',
-            'Behavior_PlayMultipleExplosionsSound',
-            'Behavior_PlaySound',
-            'Behavior_PostProcessChain',
-            'Behavior_PostProcessChain_LostShield',
-            'Behavior_PostProcessOverlay',
-            'Behavior_PursueNodeType',
-            'Behavior_QueryDayNightCycle',
-            'Behavior_QueuePersonalEcho',
-            'Behavior_RadarIcon',
-            'Behavior_RandomlyRunBehaviors',
-            'Behavior_RandomlySelectBehaviors',
-            'Behavior_ReCalculateResourcePoolValues',
-            'Behavior_RefillResourcePool',
-            'Behavior_RefillWeapon',
-            'Behavior_RegisterFastTravelDefinition',
-            'Behavior_RegisterTargetable',
-            'Behavior_ReloadComplete',
-            'Behavior_RemoteCustomEvent',
-            'Behavior_RemoteEvent',
-            'Behavior_RemoveInstanceData',
-            'Behavior_RemoveInventoryFromStorage',
-            'Behavior_ResetActionSkillCooldown',
-            'Behavior_ResetHitRegionHealth',
-            'Behavior_ReviveInjuredPlayer',
-            'Behavior_RotatePawn',
-            'Behavior_RuleEvent',
-            'Behavior_RunBehaviorAlias',
-            'Behavior_RunBehaviorCollection',
-            'Behavior_SelectPhaselockTarget',
-            'Behavior_SendGbxMessage',
-            'Behavior_SendMessageToPlayers',
-            'Behavior_SetAIFlag',
-            'Behavior_SetAkRTPCValue',
-            'Behavior_SetAlternateVertexWeight',
-            'Behavior_SetAnimSwitchNode',
-            'Behavior_SetAnimTree',
-            'Behavior_SetBeingHealed',
-            'Behavior_SetChallengeCompleted',
-            'Behavior_SetCleanupParameters',
-            'Behavior_SetCompassIcon',
-            'Behavior_SetDeathDefinition',
-            'Behavior_SetDemigodMode',
-            'Behavior_SetDiscardRootMotion',
-            'Behavior_SetDualWieldBlendState',
-            'Behavior_SetElevatorButtonGlowing',
-            'Behavior_SetExtraImpactEffect',
-            'Behavior_SetExtraMuzzleEffect',
-            'Behavior_SetFlag',
-            'Behavior_SetGodMode',
-            'Behavior_SetHardAttach',
-            'Behavior_SetInfoBarVisibility',
-            'Behavior_SetJackVoiceModulatorState',
-            'Behavior_SetLookAtSpeed',
-            'Behavior_SetMaterialParameters',
-            'Behavior_SetMaterialScalarFade',
-            'Behavior_SetMaterialScalarFadeForGoreDeath',
-            'Behavior_SetMorphNodeWeight',
-            'Behavior_SetNumBankSlots',
-            'Behavior_SetParticleSystemParameters',
-            'Behavior_SetPawnThrottleData',
-            'Behavior_SetPhysics',
-            'Behavior_SetRuleSet',
-            'Behavior_SetRuleSetByName',
-            'Behavior_SetShieldColor',
-            'Behavior_SetSkelControlActive',
-            'Behavior_SetSkelControlLookAtActor',
-            'Behavior_SetSkelControlSingleBoneData',
-            'Behavior_SetSkelControlTurretConstrainedValues',
-            'Behavior_SetSkillDefinitionForInjuredStrings',
-            'Behavior_SetStance',
-            'Behavior_SetTimeOfDay',
-            'Behavior_SetUsabilityByMissionDirectives',
-            'Behavior_SetUsabilityCost',
-            'Behavior_SetUsableIcon',
-            'Behavior_SetVehicleSimObject',
-            'Behavior_ShowGenericReviveMessage',
-            'Behavior_ShowMissionInterface',
-            'Behavior_ShowPullThePinNotification',
-            'Behavior_ShowSelfAsTarget',
-            'Behavior_SimpleAnimPlay',
-            'Behavior_SimpleAnimStop',
-            'Behavior_SkillCustomEvent',
-            'Behavior_SpawnActor',
-            'Behavior_SpawnDecal',
-            'Behavior_SpawnFirstPersonParticleSystem',
-            'Behavior_SpawnFromVehicleSpawnStation',
-            'Behavior_SpawnParticleSystemAtWorldLocation',
-            'Behavior_SpawnPerch',
-            'Behavior_SpawnProjectileFromImpact',
-            'Behavior_SpawnTemporalField',
-            'Behavior_SpecialMove',
-            'Behavior_SpecialMoveStop',
-            'Behavior_StartAkAmbientSound',
-            'Behavior_StartDeathRagdoll',
-            'Behavior_StartMissionTimer',
-            'Behavior_StatusEffectSwitch',
-            'Behavior_StopAkAmbientSound',
-            'Behavior_StopDialog',
-            'Behavior_StopMeleeAttack',
-            'Behavior_StopMissionTimer',
-            'Behavior_ToggleDialog',
-            'Behavior_ToggleNPCAlly',
-            'Behavior_ToggleObstacle',
-            'Behavior_ToggleTelescopeOverlay',
-            'Behavior_ToggleVisibility',
-            'Behavior_Transform',
-            'Behavior_TriggerDialogEvent',
-            'Behavior_UnlockAvatarAward',
-            'Behavior_UnlockAvatarAwardForAllPlayers',
-            'Behavior_UnlockCustomization',
-            'Behavior_UnlockCustomizationFromRewardPool',
-            'Behavior_UpdateCollision',
-            'Behavior_UpgradeSkill',
-            'Behavior_UseObject',
-            'Behavior_VectorMath',
-            'Behavior_VectorToLocalSpace',
-            'Behavior_WeaponBoneControl',
-            'Behavior_WeaponGlowEffect',
-            'Behavior_WeaponThrow',
-            'Behavior_WeaponVisibleAmmoState',
-            'Behavior_WeaponsRestriction',
-            'PlayerBehavior_DropItems',
-            'WillowVersusDuelBehavior',
-            'BehaviorCollectionDefinition',
-            'BehaviorKernel',
-            'AIBehaviorProviderDefinition',
-            'BehaviorProviderDefinition',
-            'BehaviorSequenceCustomEnableCondition',
-            'BehaviorSequenceEnableByMission',
-            'BehaviorSequenceEnableByMultipleConditions',
-            'Behavior_ActivateSkill',
-            'Behavior_AISpawn',
-            'Behavior_AttachItems',
-            'Behavior_AttemptStatusEffect',
-            'Behavior_AttributeEffect',
-            'Behavior_CauseDamage',
-            'Behavior_ChangeAllegiance',
-            'Behavior_Charm',
-            'Behavior_CompareBool',
-            'Behavior_CompareFloat',
-            'Behavior_CompareInt',
-            'Behavior_CompareValues',
-            'Behavior_Conditional',
-            'Behavior_DeactivateSkill',
-            'Behavior_Delay',
-            'Behavior_Destroy',
-            'Behavior_Explode',
-            'Behavior_Metronome',
-            'Behavior_PostAkEvent',
-            'Behavior_PostAkEventGetRTPC',
-            'Behavior_RandomBranch',
-            'Behavior_Switch',
-            'Behavior_ScreenParticle',
-            'Behavior_VoGScreenParticle',
-            'Behavior_SetShieldDamageResistanceType',
-            'Behavior_SetShieldTriggeredState',
-            'Behavior_SimpleMath',
-            'Behavior_SpawnFromPopulationSystem',
-            'Behavior_SpawnItems',
-            'Behavior_SpawnLoot',
-            'Behavior_SpawnLootAroundPoint',
-            'Behavior_SpawnLootAtPoints',
-            'Behavior_SpawnParticleSystem',
-            'Behavior_SpawnProjectile',
-            'Behavior_UpdateMissionObjective',
-            'BehaviorAliasDefinition',
-            'BehaviorAliasLookupDefinition',
-            'BehaviorVolumeDefinition',
-            'Behavior_GetFloatParam',
-            'Behavior_GetObjectParam',
-            'Behavior_GetVectorParam',
-            'Behavior_SetFloatParam',
-            'Behavior_SetObjectParam',
-            'Behavior_SetVectorParam',
-            'ParameterBehaviorBase',
-            'PlayerBehaviorBase',
-            'PlayerBehavior_CameraAnim',
-            'PlayerBehavior_ForceFeedback',
-            'PlayerBehavior_Melee',
-            'PlayerBehavior_PlayEchoCall',
-            'PlayerBehavior_RegisterFastTravelStation',
-            'PlayerBehavior_Reload',
-            'PlayerBehavior_SetCurrentProjectile',
-            'PlayerBehavior_SpawnCurrentProjectile',
-            'PlayerBehavior_SpawnTeleporter',
-            'PlayerBehavior_ThrowGrenade',
-            'PlayerBehavior_ToggleMeleeWeapon',
-            'PlayerBehavior_ToggleRevive',
-            'PlayerBehavior_UnlockAchievement',
-            'PlayerBehavior_UnlockAchievementForAllPlayers',
-            'PlayerBehavior_ViewShake',
-            'ProjectileBehaviorBase',
-            'ProjectileBehavior_Attach',
-            'ProjectileBehavior_Bounce',
-            'ProjectileBehavior_Detonate',
-            'ProjectileBehavior_FindHomingTarget',
-            'ProjectileBehavior_LevelOff',
-            'ProjectileBehavior_SetDamageTypeDefinition',
-            'ProjectileBehavior_SetExplosionDefinition',
-            'ProjectileBehavior_SetHomingTarget',
-            'ProjectileBehavior_SetProximity',
-            'ProjectileBehavior_SetSpeed',
-            'ProjectileBehavior_SetStickyGrenade',
-            'ProjectileBehavior_TagPayloadType',
-            },
-        'Dialog': {
-            'GearboxDialogEventTag',
-            'GearboxDialogGlobalsDefinition',
-            'GearboxDialogNameTag',
-            'WillowDialogEventTag',
-            'WillowDialogEventTagSpecialized',
-            'WillowDialogGlobalsDefinition',
-            'WillowDialogNameTag',
-            },
-        'Kismets': {
-            'PersistentSequenceData',
-            'PrefabSequence',
-            'PrefabSequenceContainer',
-            'Sequence',
-            'SequenceDefinition',
-            'GFxAction_CloseMovie',
-            'GFxAction_GetVariable',
-            'GFxAction_Invoke',
-            'GFxAction_OpenMovie',
-            'GFxAction_SetCaptureKeys',
-            'GFxAction_SetVariable',
-            'GearboxSeqAct_CameraShake',
-            'GearboxSeqAct_DestroyPopulationActors',
-            'GearboxSeqAct_PawnClonerLink',
-            'GearboxSeqAct_PopulationOpportunityLink',
-            'GearboxSeqAct_ResetPopulationCount',
-            'GearboxSeqAct_TargetPriority',
-            'GearboxSeqAct_ToggleDialog',
-            'GearboxSeqAct_TriggerDialog',
-            'GearboxSeqAct_TriggerDialogName',
-            'SeqAct_AIAbortMoveToActor',
-            'SeqAct_AIMoveToActor',
-            'SeqAct_AccessObjectList',
-            'SeqAct_ActivateRemoteEvent',
-            'SeqAct_ActorFactory',
-            'SeqAct_ActorFactoryEx',
-            'SeqAct_AddFloat',
-            'SeqAct_AddInt',
-            'SeqAct_AddRemoveFaceFXAnimSet',
-            'SeqAct_AkClearBanks',
-            'SeqAct_AkLoadBank',
-            'SeqAct_AkPostEvent',
-            'SeqAct_AkPostTrigger',
-            'SeqAct_AkSetRTPCValue',
-            'SeqAct_AkSetState',
-            'SeqAct_AkSetSwitch',
-            'SeqAct_AkStopAll',
-            'SeqAct_AllPlayersInMesh',
-            'SeqAct_AllPlayersInVolume',
-            'SeqAct_AndGate',
-            'SeqAct_ApplyBehavior',
-            'SeqAct_ApplySoundNode',
-            'SeqAct_AssignController',
-            'SeqAct_AttachPlayerPawnToBase',
-            'SeqAct_AttachToActor',
-            'SeqAct_AttachToEvent',
-            'SeqAct_CameraFade',
-            'SeqAct_CameraLookAt',
-            'SeqAct_CastToFloat',
-            'SeqAct_CastToInt',
-            'SeqAct_CausePlayerDeath',
-            'SeqAct_ChangeCollision',
-            'SeqAct_CommitMapChange',
-            'SeqAct_ConditionallyLoadCommons',
-            'SeqAct_ConsoleCommand',
-            'SeqAct_ControlGameMovie',
-            'SeqAct_ControlMovieTexture',
-            'SeqAct_ConvertToString',
-            'SeqAct_Delay',
-            'SeqAct_DelaySwitch',
-            'SeqAct_Deproject',
-            'SeqAct_Destroy',
-            'SeqAct_DiscardInventory',
-            'SeqAct_DiscoverLevelChallengeObject',
-            'SeqAct_DisplayTrainingDefinitionMessage',
-            'SeqAct_DisplayTrainingMessage',
-            'SeqAct_DisplayWillowHUDMessage',
-            'SeqAct_DivideFloat',
-            'SeqAct_DivideInt',
-            'SeqAct_DrawText',
-            'SeqAct_ExecuteSkill',
-            'SeqAct_FinishSequence',
-            'SeqAct_FlyThroughHasEnded',
-            'SeqAct_ForceFeedback',
-            'SeqAct_ForceGarbageCollection',
-            'SeqAct_Gate',
-            'SeqAct_GetAttributeValue',
-            'SeqAct_GetDistance',
-            'SeqAct_GetInstanceData',
-            'SeqAct_GetLocationAndRotation',
-            'SeqAct_GetProperty',
-            'SeqAct_GetVectorComponents',
-            'SeqAct_GetVelocity',
-            'SeqAct_HeadTrackingControl',
-            'SeqAct_Interp',
-            'SeqAct_IsInObjectList',
-            'SeqAct_IsInVolume',
-            'SeqAct_Latent',
-            'SeqAct_LevelStreaming',
-            'SeqAct_LevelStreamingBase',
-            'SeqAct_LevelVisibility',
-            'SeqAct_LoadingMovie',
-            'SeqAct_Log',
-            'SeqAct_MITV_Activate',
-            'SeqAct_MathBase',
-            'SeqAct_MathFloat',
-            'SeqAct_MathInteger',
-            'SeqAct_ModifyCover',
-            'SeqAct_ModifyHUDElement',
-            'SeqAct_ModifyHealth',
-            'SeqAct_ModifyObjectList',
-            'SeqAct_ModifyProperty',
-            'SeqAct_MultiLevelStreaming',
-            'SeqAct_MultiplyFloat',
-            'SeqAct_MultiplyInt',
-            'SeqAct_ParticleEventGenerator',
-            'SeqAct_PhysXSwitch',
-            'SeqAct_PlayBinkMovie',
-            'SeqAct_PlayCameraAnim',
-            'SeqAct_PlayFaceFXAnim',
-            'SeqAct_PlayMusicTrack',
-            'SeqAct_PlaySound',
-            'SeqAct_Possess',
-            'SeqAct_PossessForPlayer',
-            'SeqAct_PrepareMapChange',
-            'SeqAct_PrimaryPlayerBusyDelay',
-            'SeqAct_ProceduralSwitch',
-            'SeqAct_ProceduralSwitchNumeric',
-            'SeqAct_ProjectileFactory',
-            'SeqAct_RandomSwitch',
-            'SeqAct_SetApexClothingParam',
-            'SeqAct_SetBlockRigidBody',
-            'SeqAct_SetBool',
-            'SeqAct_SetCameraTarget',
-            'SeqAct_SetChallengeCompleted',
-            'SeqAct_SetDOFParams',
-            'SeqAct_SetDamageInstigator',
-            'SeqAct_SetFloat',
-            'SeqAct_SetInt',
-            'SeqAct_SetLocation',
-            'SeqAct_SetMatInstScalarParam',
-            'SeqAct_SetMaterial',
-            'SeqAct_SetMesh',
-            'SeqAct_SetMotionBlurParams',
-            'SeqAct_SetNameList',
-            'SeqAct_SetObject',
-            'SeqAct_SetParticleSysParam',
-            'SeqAct_SetPhysics',
-            'SeqAct_SetRigidBodyIgnoreVehicles',
-            'SeqAct_SetSequenceVariable',
-            'SeqAct_SetShadowParent',
-            'SeqAct_SetSkelControlTarget',
-            'SeqAct_SetSoundMode',
-            'SeqAct_SetString',
-            'SeqAct_SetVector',
-            'SeqAct_SetVectorComponents',
-            'SeqAct_SetVelocity',
-            'SeqAct_StreamInTextures',
-            'SeqAct_SubtractFloat',
-            'SeqAct_SubtractInt',
-            'SeqAct_Switch',
-            'SeqAct_Teleport',
-            'SeqAct_TimedMessage',
-            'SeqAct_Timer',
-            'SeqAct_Toggle',
-            'SeqAct_ToggleCinematicMode',
-            'SeqAct_ToggleConstraintDrive',
-            'SeqAct_ToggleGodMode',
-            'SeqAct_ToggleHUD',
-            'SeqAct_ToggleHidden',
-            'SeqAct_ToggleInput',
-            'SeqAct_Trace',
-            'SeqAct_UnlockAchievement',
-            'SeqAct_UpdatePhysBonesFromAnim',
-            'SeqAct_WaitForLevelsVisible',
-            'SequenceAction',
-            'WillowSeqAct_AICombatVolume',
-            'WillowSeqAct_AILookAt',
-            'WillowSeqAct_AIProvoke',
-            'WillowSeqAct_AIScripted',
-            'WillowSeqAct_AIScriptedAnim',
-            'WillowSeqAct_AIScriptedDeath',
-            'WillowSeqAct_AIScriptedFollow',
-            'WillowSeqAct_AIScriptedHold',
-            'WillowSeqAct_AISetItemTossTarget',
-            'WillowSeqAct_ActivateInstancedBehaviorSequences',
-            'WillowSeqAct_BossBar',
-            'WillowSeqAct_CleanUpPlayerVehicles',
-            'WillowSeqAct_ClientFlagGet',
-            'WillowSeqAct_ClientFlagSet',
-            'WillowSeqAct_CloseColiseumOverlay',
-            'WillowSeqAct_ColiseumAllDead',
-            'WillowSeqAct_ColiseumAnnouncePenaltyBox',
-            'WillowSeqAct_ColiseumAwardCertificate',
-            'WillowSeqAct_ColiseumNotify',
-            'WillowSeqAct_ColiseumRoundAnnounce',
-            'WillowSeqAct_ColiseumRuleAnnounce',
-            'WillowSeqAct_ColiseumStartTimer',
-            'WillowSeqAct_ColiseumVictory',
-            'WillowSeqAct_CompleteMission',
-            'WillowSeqAct_ConfigureBossMusic',
-            'WillowSeqAct_ConfigureCustomAmbientMusic',
-            'WillowSeqAct_ConfigureLevelMusic',
-            'WillowSeqAct_CoordinateOperations',
-            'WillowSeqAct_DayNightCycle',
-            'WillowSeqAct_DisableCombatMusicLogic',
-            'WillowSeqAct_ElevatorFinished',
-            'WillowSeqAct_EnableCombatMusicLogic',
-            'WillowSeqAct_ExitVehicle',
-            'WillowSeqAct_GiveMission',
-            'WillowSeqAct_InterpMenu',
-            'WillowSeqAct_InterpPawn',
-            'WillowSeqAct_KillPawnBasedOnAllegiance',
-            'WillowSeqAct_MarkEnteredRegion',
-            'WillowSeqAct_MarkExitedRegion',
-            'WillowSeqAct_MarkPlaythroughCompleted',
-            'WillowSeqAct_MissionCustomEvent',
-            'WillowSeqAct_MissionSmokeTest',
-            'WillowSeqAct_MoveElevator',
-            'WillowSeqAct_NotifyDesignerAttribute',
-            'WillowSeqAct_OpenColiseumOverlay',
-            'WillowSeqAct_PlayArmAnimation',
-            'WillowSeqAct_PlayCameraAnim',
-            'WillowSeqAct_PrepareMapChangeFromDefinition',
-            'WillowSeqAct_PrepareSavedMapChange',
-            'WillowSeqAct_QueryTeleporterStatus',
-            'WillowSeqAct_ReleaseTeleporterHeldLevel',
-            'WillowSeqAct_ResurrectPlayer',
-            'WillowSeqAct_RunCustomEvent',
-            'WillowSeqAct_SetAIFlag',
-            'WillowSeqAct_SetInteractionProxyState',
-            'WillowSeqAct_SetLockout',
-            'WillowSeqAct_SetLookAtActor',
-            'WillowSeqAct_StopCameraAnim',
-            'WillowSeqAct_ToggleCinematicModeAffectsAll',
-            'WillowSeqAct_TogglePostRenderFor',
-            'WillowSeqAct_ToggleRestrictions',
-            'WillowSeqAct_TravelStationTeleport',
-            'WillowSeqAct_TurnOffCombatMusic',
-            'WillowSeqAct_UpdateColiseumRuleOverlay',
-            'WillowSeqAct_WaypointObjective',
-            'SequenceEventEnableByMission',
-            'GFxEvent_FSCommand',
-            'InterpData',
-            'SavingSequenceFrame',
-            'SeqCond_CompareBool',
-            'SeqCond_CompareFloat',
-            'SeqCond_CompareInt',
-            'SeqCond_CompareLocation',
-            'SeqCond_CompareObject',
-            'SeqCond_CompareString',
-            'SeqCond_GetLanguage',
-            'SeqCond_GetServerType',
-            'SeqCond_HasValidSaveGame',
-            'SeqCond_Increment',
-            'SeqCond_IncrementFloat',
-            'SeqCond_IsAlive',
-            'SeqCond_IsBenchmarking',
-            'SeqCond_IsConsole',
-            'SeqCond_IsInCombat',
-            'SeqCond_IsLoggedIn',
-            'SeqCond_IsPIE',
-            'SeqCond_IsPlayerCharacterClass',
-            'SeqCond_IsSameTeam',
-            'SeqCond_MatureLanguage',
-            'SeqCond_ShowGore',
-            'SeqCond_SwitchBase',
-            'SeqCond_SwitchClass',
-            'SeqCond_SwitchObject',
-            'SeqCond_SwitchPlatform',
-            'SeqDef_Base',
-            'SeqEvent_AIReachedRouteActor',
-            'SeqEvent_AISeeEnemy',
-            'SeqEvent_AllSpawned',
-            'SeqEvent_AnimNotify',
-            'SeqEvent_ArrivedAtMoveNode',
-            'SeqEvent_Console',
-            'SeqEvent_ConstraintBroken',
-            'SeqEvent_Death',
-            'SeqEvent_Destroyed',
-            'SeqEvent_EncounterWaveComplete',
-            'SeqEvent_HitWall',
-            'SeqEvent_LOS',
-            'SeqEvent_LeavingMoveNode',
-            'SeqEvent_LevelLoaded',
-            'SeqEvent_Mover',
-            'SeqEvent_ParticleEvent',
-            'SeqEvent_PickupStatusChange',
-            'SeqEvent_PlayerSpawned',
-            'SeqEvent_PopulatedActor',
-            'SeqEvent_PopulatedPoint',
-            'SeqEvent_ProjectileLanded',
-            'SeqEvent_RemoteEvent',
-            'SeqEvent_RigidBodyCollision',
-            'SeqEvent_SeamlessTravelComplete',
-            'SeqEvent_SeeDeath',
-            'SeqEvent_SequenceActivated',
-            'SeqEvent_SinglePopulationDeath',
-            'SeqEvent_SpawnedMissionPickup',
-            'SeqEvent_TakeDamage',
-            'SeqEvent_TakeHitRegionDamage',
-            'SeqEvent_Touch',
-            'SeqEvent_TrainingMessage',
-            'SeqEvent_Used',
-            'SeqEvent_WorldDiscoveryArea',
-            'SeqVar_Bool',
-            'SeqVar_Byte',
-            'SeqVar_Character',
-            'SeqVar_External',
-            'SeqVar_Float',
-            'SeqVar_Group',
-            'SeqVar_Int',
-            'SeqVar_Name',
-            'SeqVar_Named',
-            'SeqVar_Object',
-            'SeqVar_ObjectList',
-            'SeqVar_ObjectVolume',
-            'SeqVar_OverpowerLevel',
-            'SeqVar_Player',
-            'SeqVar_PrimaryLocalPlayer',
-            'SeqVar_RandomFloat',
-            'SeqVar_RandomInt',
-            'SeqVar_String',
-            'SeqVar_Union',
-            'SeqVar_Vector',
-            'SequenceCondition',
-            'SequenceEvent',
-            'SequenceFrame',
-            'SequenceFrameWrapped',
-            'SequenceObject',
-            'SequenceOp',
-            'SequenceVariable',
-            'WillowSeqCond_AnyPlayerHasMarketingUnlock',
-            'WillowSeqCond_CheckLockout',
-            'WillowSeqCond_GoStraightToMainMenu',
-            'WillowSeqCond_IsCombatMusicPlaying',
-            'WillowSeqCond_IsPlayerServer',
-            'WillowSeqCond_MultiplePlayersInGame',
-            'WillowSeqCond_ShouldStartNewGameCinematics',
-            'WillowSeqCond_SplitScreen',
-            'WillowSeqCond_SwitchByPlatform',
-            'WillowSeqEvent_CombatMusicStarted',
-            'WillowSeqEvent_CounterAtTarget',
-            'WillowSeqEvent_CustomEvent',
-            'WillowSeqEvent_DenStat',
-            'WillowSeqEvent_DuelChallengeAccepted',
-            'WillowSeqEvent_DuelChallengeIssued',
-            'WillowSeqEvent_ElevatorUsed',
-            'WillowSeqEvent_FastTravel',
-            'WillowSeqEvent_JumpAnimIdle',
-            'WillowSeqEvent_JumpAnimStart',
-            'WillowSeqEvent_JumpAnimStop',
-            'WillowSeqEvent_MissionRemoteEvent',
-            'WillowSeqEvent_PlayerJoined',
-            'WillowSeqEvent_PlayerLeft',
-            'WillowSeqEvent_Provoked',
-            'WillowSeqEvent_ShowCharacterSelectUI',
-            'WillowSeqEvent_StartNewGameCinematics',
-            'WillowSeqEvent_TimerElapsed',
-            'WillowSeqEvent_VehicleSpawned',
-            'WillowSeqVar_DayNightCycleRate',
-            'WillowSeqVar_DayNightCycleVariable',
-            'WillowSeqVar_TimeOfDay',
-            'Trigger_Dynamic',
-            'Trigger_LOS',
-            'WillowTrigger',
-            'WillowWaypoint',
-            },
-        'Meshes': {
-            'GestaltSkeletalMeshDefinition',
-            'ApexComponentBase',
-            'ApexDynamicComponent',
-            'ApexStaticComponent',
-            'ApexStaticDestructibleComponent',
-            'CustomSkeletalMeshComponent',
-            'GearLikenessMeshComponent',
-            'GearboxSkeletalMeshComponent',
-            'PerchPreviewComponent',
-            'PhysicsJumpPreviewComponent',
-            'SkeletalMeshComponent',
-            'WillowPopulationPointPreviewComponent',
-            'WillowPreviewComponent',
-            'SkeletalMesh',
-            'StaticMesh',
-            'WiringMesh',
-            },
-        'Missions': {
-            'MissionDirectivesDefinition',
-            'QuestAcceptGFxDefinition',
-            'MissionDefinition',
-            'MissionObjectiveDefinition',
-            'MissionObjectiveSetBranchingDefinition',
-            'MissionObjectiveSetCollectionDefinition',
-            'MissionObjectiveSetDefinition',
-            'MissionPopulationAspect',
-            'FailableMissionDirectiveWaypointComponent',
-            'MissionDirectiveWaypointComponent',
-            'MissionObjectiveWaypointComponent',
-            },
-        'Particles': {
-            'EffectCollectionDefinition',
-            'ParticleEmitter',
-            'ParticleSpriteEmitter',
-            'ParticleLODLevel',
-            'ParticleModule',
-            'ParticleModuleAcceleration',
-            'ParticleModuleAccelerationBase',
-            'ParticleModuleAccelerationOverLifetime',
-            'ParticleModuleAttractorBase',
-            'ParticleModuleAttractorLine',
-            'ParticleModuleAttractorParticle',
-            'ParticleModuleAttractorPoint',
-            'ParticleModuleBeamBase',
-            'ParticleModuleBeamModifier',
-            'ParticleModuleBeamNoise',
-            'ParticleModuleBeamSource',
-            'ParticleModuleBeamTarget',
-            'ParticleModuleBeamTrace',
-            'ParticleModuleCameraBase',
-            'ParticleModuleCameraOffset',
-            'ParticleModuleCollision',
-            'ParticleModuleCollisionActor',
-            'ParticleModuleCollisionBase',
-            'ParticleModuleColor',
-            'ParticleModuleColorBase',
-            'ParticleModuleColorByParameter',
-            'ParticleModuleColorOverLife',
-            'ParticleModuleColorScaleOverDensity',
-            'ParticleModuleColorScaleOverLife',
-            'ParticleModuleColor_Seeded',
-            'ParticleModuleEventBase',
-            'ParticleModuleEventGenerator',
-            'ParticleModuleEventGeneratorDecal',
-            'ParticleModuleEventReceiverBase',
-            'ParticleModuleEventReceiverKillParticles',
-            'ParticleModuleEventReceiverSpawn',
-            'ParticleModuleForceFieldBase',
-            'ParticleModuleForceFieldCylindrical',
-            'ParticleModuleForceFieldGeneric',
-            'ParticleModuleForceFieldRadial',
-            'ParticleModuleForceFieldTornado',
-            'ParticleModuleKillBase',
-            'ParticleModuleKillBox',
-            'ParticleModuleKillHeight',
-            'ParticleModuleLifetime',
-            'ParticleModuleLifetimeBase',
-            'ParticleModuleLifetime_Seeded',
-            'ParticleModuleLocation',
-            'ParticleModuleLocationBase',
-            'ParticleModuleLocationBoneSocket',
-            'ParticleModuleLocationDirect',
-            'ParticleModuleLocationEmitter',
-            'ParticleModuleLocationEmitterDirect',
-            'ParticleModuleLocationPrimitiveBase',
-            'ParticleModuleLocationPrimitiveCylinder',
-            'ParticleModuleLocationPrimitiveCylinder_Seeded',
-            'ParticleModuleLocationPrimitiveSphere',
-            'ParticleModuleLocationPrimitiveSphere_Seeded',
-            'ParticleModuleLocationSkelVertSurface',
-            'ParticleModuleLocation_Seeded',
-            'ParticleModuleMaterialBase',
-            'ParticleModuleMaterialByParameter',
-            'ParticleModuleMeshMaterial',
-            'ParticleModuleMeshRotation',
-            'ParticleModuleMeshRotationRate',
-            'ParticleModuleMeshRotationRateMultiplyLife',
-            'ParticleModuleMeshRotationRateOverLife',
-            'ParticleModuleMeshRotationRate_Seeded',
-            'ParticleModuleMeshRotation_Seeded',
-            'ParticleModuleOrbit',
-            'ParticleModuleOrbitBase',
-            'ParticleModuleOrientationAxisLock',
-            'ParticleModuleOrientationBase',
-            'ParticleModuleParameterBase',
-            'ParticleModuleParameterDynamic',
-            'ParticleModuleParameterDynamic_Seeded',
-            'ParticleModuleRequired',
-            'ParticleModuleRotation',
-            'ParticleModuleRotationBase',
-            'ParticleModuleRotationOverLifetime',
-            'ParticleModuleRotationRate',
-            'ParticleModuleRotationRateBase',
-            'ParticleModuleRotationRateMultiplyLife',
-            'ParticleModuleRotationRate_Seeded',
-            'ParticleModuleRotation_Seeded',
-            'ParticleModuleSize',
-            'ParticleModuleSizeBase',
-            'ParticleModuleSizeMultiplyLife',
-            'ParticleModuleSizeMultiplyVelocity',
-            'ParticleModuleSizeScale',
-            'ParticleModuleSizeScaleByTime',
-            'ParticleModuleSizeScaleOverDensity',
-            'ParticleModuleSize_Seeded',
-            'ParticleModuleSourceMovement',
-            'ParticleModuleSpawn',
-            'ParticleModuleSpawnBase',
-            'ParticleModuleSpawnPerUnit',
-            'ParticleModuleStoreSpawnTime',
-            'ParticleModuleStoreSpawnTimeBase',
-            'ParticleModuleSubUV',
-            'ParticleModuleSubUVBase',
-            'ParticleModuleSubUVDirect',
-            'ParticleModuleSubUVMovie',
-            'ParticleModuleSubUVSelect',
-            'ParticleModuleTrailBase',
-            'ParticleModuleTrailSource',
-            'ParticleModuleTrailSpawn',
-            'ParticleModuleTrailTaper',
-            'ParticleModuleTypeDataAnimTrail',
-            'ParticleModuleTypeDataApex',
-            'ParticleModuleTypeDataBase',
-            'ParticleModuleTypeDataBeam',
-            'ParticleModuleTypeDataBeam2',
-            'ParticleModuleTypeDataMesh',
-            'ParticleModuleTypeDataMeshPhysX',
-            'ParticleModuleTypeDataPhysX',
-            'ParticleModuleTypeDataRibbon',
-            'ParticleModuleTypeDataTrail',
-            'ParticleModuleTypeDataTrail2',
-            'ParticleModuleUberBase',
-            'ParticleModuleUberLTISIVCL',
-            'ParticleModuleUberLTISIVCLIL',
-            'ParticleModuleUberLTISIVCLILIRSSBLIRR',
-            'ParticleModuleUberRainDrops',
-            'ParticleModuleUberRainImpacts',
-            'ParticleModuleUberRainSplashA',
-            'ParticleModuleUberRainSplashB',
-            'ParticleModuleVelocity',
-            'ParticleModuleVelocityBase',
-            'ParticleModuleVelocityInheritParent',
-            'ParticleModuleVelocityOverLifetime',
-            'ParticleModuleVelocity_Seeded',
-            'ParticleSystem',
-            'ParticleSystemComponent',
-            },
-        'Populations': {
-            'PopulationDefinition',
-            'WillowPopulationDefinition',
-            'PopulationEncounter',
-            'WillowPopulationEncounter',
-            'PopulationFactory',
-            'PopulationFactoryBalancedAIPawn',
-            'PopulationFactoryBlackMarket',
-            'PopulationFactoryGeneric',
-            'PopulationFactoryInteractiveObject',
-            'PopulationFactoryPopulationDefinition',
-            'PopulationFactoryVendingMachine',
-            'PopulationFactoryWillowAIPawn',
-            'PopulationFactoryWillowInventory',
-            'PopulationFactoryWillowProjectile',
-            'PopulationFactoryWillowVehicle',
-            'WillowPopulationMaster',
-            'PopulationOpportunity',
-            'PopulationOpportunityArea',
-            'PopulationOpportunityCloner',
-            'PopulationOpportunityCombat',
-            'PopulationOpportunityDen',
-            'PopulationOpportunityDen_Dynamic',
-            'PopulationOpportunityPoint',
-            'WillowPopulationOpportunityPoint',
-            'PopulationPoint',
-            'PopulationPoint_Dynamic',
-            'WillowPopulationPoint',
-            'WillowPopulationPoint_Dynamic',
-            'WillowPopulationPointDefinition',
-            },
-        'Skins': {
-            'DecalMaterial',
-            'LightMapTexture2D',
-            'Material',
-            'MaterialInstance',
-            'MaterialInstanceConstant',
-            'MaterialInstanceTimeVarying',
-            'MaterialInterface',
-            'ScriptedTexture',
-            'ShadowMapTexture2D',
-            'TerrainWeightMapTexture',
-            'Texture',
-            'Texture2D',
-            'Texture2DComposite',
-            'Texture2DDynamic',
-            'TextureCube',
-            'TextureFlipBook',
-            'TextureMovie',
-            'TextureRenderTarget',
-            'TextureRenderTarget2D',
-            'TextureRenderTargetCube',
-            },
-        'StaticMeshes': {
-            'BlockingMeshComponent',
-            'CoverMeshComponent',
-            'GearboxStaticMeshComponent',
-            'InstancedStaticMeshComponent',
-            'InteractiveFoliageComponent',
-            'SplineMeshComponent',
-            'StaticMeshComponent',
-            },
-        'WillowData': {
-            'WillowPlayerPawn',
-            'WillowPendingLevelPlayerController',
-            'WillowPlayerController',
-            'Inventory',
-            'Weapon',
-            'WillowArtifact',
-            'WillowBuzzaxeWeapon',
-            'WillowClassMod',
-            'WillowEquipAbleItem',
-            'WillowGrenadeMod',
-            'WillowInventory',
-            'WillowItem',
-            'WillowMissionItem',
-            'WillowShield',
-            'WillowTurretWeapon',
-            'WillowUsableCustomizationItem',
-            'WillowUsableItem',
-            'WillowVehicleWeapon',
-            'WillowWeapon',
-            'WillowProfileSettings',
-            'WillowVehicle',
-            'WillowVehicleBase',
-            'WillowVehicle_ChopperVehicle',
-            'WillowVehicle_FlyingVehicle',
-            'WillowVehicle_Tank',
-            'WillowVehicle_Turret',
-            'WillowVehicle_WheeledVehicle',
-            'WillowWeaponPawn',
-            'WillowPlayerReplicationInfo',
-            'SpecialMove_Cloak',
-            'SpecialMove_Cover',
-            'SpecialMove_Cringe',
-            'SpecialMove_Dodge',
-            'SpecialMove_FirstAndThirdPersonAnimation',
-            'SpecialMove_Motion',
-            'SpecialMove_Perch',
-            'SpecialMove_PerchLoop',
-            'SpecialMove_PerchRandomLoop',
-            'SpecialMove_PhaseLock',
-            'SpecialMove_PhysicsJump',
-            'SpecialMove_PopulationPoint',
-            'SpecialMove_Spawned',
-            'SpecialMove_Turn',
-            'SpecialMove_Vehicle',
-            'SpecialMove_WeaponAction',
-            'SpecialMove_WeaponActionOffHand',
-            'WillowAnimDefinition',
-            'WillowPlayerStats',
-            'WillowDamageArea',
-            'FastTravelStation',
-            'LevelTravelStation',
-            'ResurrectTravelStation',
-            'TravelStation',
-            'VehicleSpawnStationPlatform',
-            'VehicleSpawnStationTerminal',
-            'WillowElevatorButton',
-            'WillowInteractiveObject',
-            'WillowInteractiveSwitch',
-            'WillowPropObject',
-            'WillowVendingMachine',
-            'WillowVendingMachineBase',
-            'WillowVendingMachineBlackMarket',
-            },
-        },
-    'TPS': {
-        'AI': {
-            'AIClassDefinition',
-            'AIComponent',
-            'AIController',
-            'AICostExpressionEvaluator',
-            'AIDefinition',
-            'AIPawnBalanceDefinition',
-            'AIPawnBalanceModifierDefinition',
-            'AIResource',
-            'DeployableTurretActor',
-            'GearboxAIController',
-            'GearboxMind',
-            'WillowAIBlackboardComponent',
-            'WillowAIComponent',
-            'WillowAICranePawn',
-            'WillowAIDefinition',
-            'WillowAIDenComponent',
-            'WillowAIDenDefinition',
-            'WillowAIEncounterComponent',
-            'WillowAIPawn',
-            'WillowMind',
-            },
-        'Actions': {
-            'ActionSequence',
-            'ActionSequenceList',
-            'ActionSequencePawn',
-            'ActionSequenceRandom',
             'Action_AimAtScanRange',
             'Action_AimAtThreat',
             'Action_AnimAttack',
@@ -1856,13 +121,13 @@ blcmm_orgs = {
             'Action_CoverAttack',
             'Action_DeathTrap',
             'Action_DiveBombAttack',
-            'Action_DriveVehicle',
             'Action_Drive_AlongsideTarget',
             'Action_Drive_AvoidWall',
             'Action_Drive_BackUpAndAdjust',
             'Action_Drive_GoBackToCombatArea',
             'Action_Drive_Pursuit',
             'Action_Drive_Pursuit_TargetOnFoot',
+            'Action_DriveVehicle',
             'Action_FaceThreat',
             'Action_FinalBoss',
             'Action_FinalBossFly',
@@ -1893,18 +158,53 @@ blcmm_orgs = {
             'Action_SwoopAttack',
             'Action_VehicleTurret',
             'Action_WallAttack',
+            'ActionSequence',
+            'ActionSequenceList',
+            'ActionSequencePawn',
+            'ActionSequenceRandom',
             'OzAction_DoppelgangerPickup',
             'OzAction_LeapAndShootAtTarget',
             'OzAction_ZarpedonBoss_Flight',
             'WillowActionSequencePawn',
             },
-        'Animation Sequences': {
-            'AnimSequence',
+        'AI': {
+            'AIClassDefinition',
+            'AIComponent',
+            'AIController',
+            'AICostExpressionEvaluator',
+            'AIDefinition',
+            'AIPawnBalanceDefinition',
+            'AIPawnBalanceModifierDefinition',
+            'AIResource',
+            'DeployableTurretActor',
+            'GearboxAIController',
+            'GearboxMind',
+            'WillowAIBlackboardComponent',
+            'WillowAIComponent',
+            'WillowAICranePawn',
+            'WillowAIDefinition',
+            'WillowAIDenComponent',
+            'WillowAIDenDefinition',
+            'WillowAIEncounterComponent',
+            'WillowAIPawn',
+            'WillowMind',
             },
         'Animations': {
+            'AnimationCompressionAlgorithm',
+            'AnimationCompressionAlgorithm_Automatic',
+            'AnimationCompressionAlgorithm_BitwiseCompressOnly',
+            'AnimationCompressionAlgorithm_GBXCustom',
+            'AnimationCompressionAlgorithm_LeastDestructive',
+            'AnimationCompressionAlgorithm_PerTrackCompression',
+            'AnimationCompressionAlgorithm_RemoveEverySecondKey',
+            'AnimationCompressionAlgorithm_RemoveLinearKeys',
+            'AnimationCompressionAlgorithm_RemoveTrivialKeys',
+            'AnimationCompressionAlgorithm_RevertToRaw',
+            'AnimMetaData',
             'AnimMetaData_SkelControl',
             'AnimMetaData_SkelControlKeyFrame',
             'AnimNode',
+            'AnimNode_MultiBlendPerBone',
             'AnimNodeAdditiveBlending',
             'AnimNodeAimOffset',
             'AnimNodeBlend',
@@ -1930,7 +230,7 @@ blcmm_orgs = {
             'AnimNodeSlot',
             'AnimNodeSpecialMoveBlend',
             'AnimNodeSynch',
-            'AnimNode_MultiBlendPerBone',
+            'AnimNotify',
             'AnimNotify_AkEvent',
             'AnimNotify_CameraEffect',
             'AnimNotify_ClothingMaxDistanceScale',
@@ -1946,10 +246,14 @@ blcmm_orgs = {
             'AnimNotify_PlayParticleEffect',
             'AnimNotify_Rumble',
             'AnimNotify_Script',
+            'AnimNotify_Scripted',
+            'AnimNotify_Sound',
+            'AnimNotify_SoundSpatial',
             'AnimNotify_Trails',
             'AnimNotify_UseBehavior',
             'AnimNotify_ViewShake',
             'AnimObject',
+            'AnimSequence',
             'AnimSet',
             'AnimTree',
             'GameSkelCtrl_Recoil',
@@ -1962,10 +266,13 @@ blcmm_orgs = {
             'MorphNodeWeightByBoneRotation',
             'OzAnimNodeBlendPerBone',
             'OzWillowAnimNode_OptimizeCondition',
+            'SkelControl_CCD_IK',
+            'SkelControl_Multiply',
+            'SkelControl_TwistBone',
             'SkelControlBase',
             'SkelControlFootPlacement',
-            'SkelControlHandModifier',
             'SkelControlHandlebars',
+            'SkelControlHandModifier',
             'SkelControlLeftHandGripWeapon',
             'SkelControlLimb',
             'SkelControlLookAt',
@@ -1973,10 +280,18 @@ blcmm_orgs = {
             'SkelControlSpline',
             'SkelControlTrail',
             'SkelControlWheel',
-            'SkelControl_CCD_IK',
-            'SkelControl_Multiply',
-            'SkelControl_TwistBone',
             'WillowAnimBlendByPosture',
+            'WillowAnimNode_AddCameraBone',
+            'WillowAnimNode_AimState',
+            'WillowAnimNode_Audio',
+            'WillowAnimNode_ClimbLadder',
+            'WillowAnimNode_Condition',
+            'WillowAnimNode_Falling',
+            'WillowAnimNode_MovementTransition',
+            'WillowAnimNode_Prism',
+            'WillowAnimNode_Simple',
+            'WillowAnimNode_WeaponHold',
+            'WillowAnimNode_WeaponRecoil',
             'WillowAnimNodeAimOffset',
             'WillowAnimNodeAimOffset_BoundaryTurret',
             'WillowAnimNodeBlendByAimState',
@@ -1994,21 +309,7 @@ blcmm_orgs = {
             'WillowAnimNodeSequence',
             'WillowAnimNodeSequenceAdditiveBlend',
             'WillowAnimNodeSlot',
-            'WillowAnimNode_AddCameraBone',
-            'WillowAnimNode_AimState',
-            'WillowAnimNode_Audio',
-            'WillowAnimNode_ClimbLadder',
-            'WillowAnimNode_Condition',
-            'WillowAnimNode_Falling',
-            'WillowAnimNode_MovementTransition',
-            'WillowAnimNode_Prism',
-            'WillowAnimNode_Simple',
-            'WillowAnimNode_WeaponHold',
-            'WillowAnimNode_WeaponRecoil',
             'WillowAnimTree',
-            'WillowSkelControlHandPlacement',
-            'WillowSkelControlLerpSingleBone',
-            'WillowSkelControlSpline',
             'WillowSkelControl_EyelidLook',
             'WillowSkelControl_FootPlacement',
             'WillowSkelControl_LeftLowerEyelidLook',
@@ -2023,26 +324,32 @@ blcmm_orgs = {
             'WillowSkelControl_RotationRateBySpeed',
             'WillowSkelControl_TurretConstrained',
             'WillowSkelControl_UpperEyelidLook',
+            'WillowSkelControlHandPlacement',
+            'WillowSkelControlLerpSingleBone',
+            'WillowSkelControlSpline',
             'WillowStaggerAnimNodeBlend',
             },
         'Base': {
-            'AIResourceAttributeValueResolver',
-            'AIResourceExpressionEvaluator',
-            'AIState',
-            'AIStateBase',
-            'AIState_Priority',
-            'AIState_Random',
-            'AIState_Sequential',
             'AccessControl',
             'ActionSkill',
             'ActionSkillStateExpressionEvaluator',
             'Admin',
             'AdvancedAxisDefinition',
+            'AIResourceAttributeValueResolver',
+            'AIResourceExpressionEvaluator',
+            'AIState',
+            'AIState_Priority',
+            'AIState_Random',
+            'AIState_Sequential',
+            'AIStateBase',
             'AkAmbientSound',
             'AllegianceExpressionEvaluator',
+            'AmbientSound',
             'AmmoDropWeightAttributeValueResolver',
             'AmmoResourcePool',
             'AmmoResourceUpgradeAttributeValueResolver',
+            'AnemoneInfectionDefinition',
+            'AnemoneInfectionState',
             'ArtifactDefinition',
             'ArtifactPartDefinition',
             'AttributeDefinition',
@@ -2142,7 +449,6 @@ blcmm_orgs = {
             'CustomizationUsage_Siren',
             'CustomizationUsage_Soldier',
             'CustomizationUsage_Vehicle',
-            'DLCLegacyPlayerClassIdentifierDefinition',
             'DamagePipeline',
             'DamageType',
             'DamageTypeAttributeValueResolver',
@@ -2155,6 +461,7 @@ blcmm_orgs = {
             'DesignerAttributeContextResolver',
             'DesignerAttributeDefinition',
             'DialogNameTagExpressionEvaluator',
+            'DLCLegacyPlayerClassIdentifierDefinition',
             'DmgType_Crushed',
             'DmgType_Fell',
             'DmgType_Suicided',
@@ -2204,22 +511,19 @@ blcmm_orgs = {
             'FragtrapActionSkill',
             'FromContextFlagValueResolver',
             'FrontendGFxMovieDefinition',
-            'GFxManagerDefinition',
-            'GFxMovieDefinition',
-            'GFxTextListDefinition',
             'GameBalanceDefinition',
             'GameInfo',
             'GameMessage',
             'GamePawn',
             'GamePlayerController',
-            'GameReleaseDefinition',
-            'GameReplicationInfo',
-            'GameStateObject',
-            'GameStatsAggregator',
             'GameplayEvents',
             'GameplayEventsHandler',
             'GameplayEventsReader',
             'GameplayEventsWriter',
+            'GameReleaseDefinition',
+            'GameReplicationInfo',
+            'GameStateObject',
+            'GameStatsAggregator',
             'GammaScreenGFxDefinition',
             'GbxMessageDefinition',
             'GearboxAccountActions',
@@ -2227,8 +531,8 @@ blcmm_orgs = {
             'GearboxAnimDefinition',
             'GearboxCalloutDefinition',
             'GearboxCheatManager',
-            'GearboxEULAGFxMovieDefinition',
             'GearboxEngineGlobals',
+            'GearboxEULAGFxMovieDefinition',
             'GearboxGameInfo',
             'GearboxGlobals',
             'GearboxGlobalsDefinition',
@@ -2239,20 +543,23 @@ blcmm_orgs = {
             'GearboxProfileSettings',
             'GenericReviveMessageDefinition',
             'GestaltPartMatricesCollectionDefinition',
+            'GFxManagerDefinition',
+            'GFxMovieDefinition',
+            'GFxTextListDefinition',
             'GladiatorActionSkill',
             'GlobalAttributeValueResolver',
             'GlobalsDefinition',
             'GrenadeModDefinition',
             'GrenadeModPartDefinition',
             'GrinderRecipeDefinition',
-            'HUDDefinition',
-            'HUDScalingAnchorDefinition',
             'HashDisplayGFxDefinition',
             'HealthResourcePool',
             'HealthStateExpressionEvaluator',
             'HelpCommandlet',
             'HoldingAreaDestination',
             'HoverVehicleHandlingDefinition',
+            'HUDDefinition',
+            'HUDScalingAnchorDefinition',
             'InjuredDefinition',
             'InjuredFeedbackMessage',
             'InputActionDefinition',
@@ -2272,6 +579,7 @@ blcmm_orgs = {
             'InventoryBalanceDefinition',
             'InventoryCardPresentationDefinition',
             'InventoryPartListCollectionDefinition',
+            'IpNetConnectionEpicStore',
             'IpNetConnectionSteamworks',
             'ItemBalanceDefinition',
             'ItemDefinition',
@@ -2305,13 +613,13 @@ blcmm_orgs = {
             'LiftActionSkill',
             'LocalInventoryRefreshMessage',
             'LocalItemMessage',
+            'LocalizedStringDefinition',
             'LocalMapChangeMessage',
             'LocalMessage',
             'LocalPlayer',
             'LocalTrainingDefinitionMessage',
             'LocalTrainingMessage',
             'LocalWeaponMessage',
-            'LocalizedStringDefinition',
             'LockoutDefinition',
             'LookAxisDefinition',
             'LootConfigurationDefinition',
@@ -2329,6 +637,7 @@ blcmm_orgs = {
             'MissionWeaponBalanceDefinition',
             'MovementComponent',
             'MultipleFlagValueResolver',
+            'NameListDefinition',
             'NestedAttributeDefinition',
             'NetConnection',
             'NetDriver',
@@ -2390,7 +699,6 @@ blcmm_orgs = {
             'OzWillowReturningProjectile',
             'OzWillowTetherBeamDefinition',
             'OzWillowTetherTargetProjectile',
-            'PMESTG_LeaveADecalBase',
             'PassengerCameraDefinition',
             'PatchScriptCommandlet',
             'PathTargetPoint',
@@ -2403,9 +711,8 @@ blcmm_orgs = {
             'PersonalAssistActionSkill',
             'PersonalTeleporterDefinition',
             'PhaseLockDefinition',
-            'PhysXParticleSystem',
             'PhysicsStateExpressionEvaluator',
-            'PlayThroughCountAttributeValueResolver',
+            'PhysXParticleSystem',
             'Player',
             'PlayerActionExpressionEvaluator',
             'PlayerChallengeListDefinition',
@@ -2423,6 +730,8 @@ blcmm_orgs = {
             'PlayerStart',
             'PlayerStatAttributeValueResolver',
             'PlayerTrainingMessageListDefinition',
+            'PlayThroughCountAttributeValueResolver',
+            'PMESTG_LeaveADecalBase',
             'PopulationMaster',
             'PostureStateExpressionEvaluator',
             'Projectile',
@@ -2443,7 +752,6 @@ blcmm_orgs = {
             'ResourcePoolStateAttributeValueResolver',
             'RootMotionDefinition',
             'RuleEventDef',
-            'SVehicle',
             'ScorpioActionSkill',
             'Scout',
             'ServerCommandlet',
@@ -2466,12 +774,12 @@ blcmm_orgs = {
             'SparkInterfaceImpl',
             'SparkServiceConfiguration',
             'SparkTypes',
-            'SpecialMoveDefinition',
-            'SpecialMoveExpressionList',
-            'SpecialMoveRandom',
             'SpecialMove_FirstPerson',
             'SpecialMove_FirstPersonDualWieldAction',
             'SpecialMove_FirstPersonOffHand',
+            'SpecialMoveDefinition',
+            'SpecialMoveExpressionList',
+            'SpecialMoveRandom',
             'SplitscreenHelper',
             'SprintDefinition',
             'StaggerDefinition',
@@ -2486,13 +794,14 @@ blcmm_orgs = {
             'StatusEffectProxyActor',
             'StatusEffectsComponent',
             'StatusMenuGFxDefinition',
+            'SVehicle',
             'TankVehicleHandlingDefinition',
-            'TargetMetaInfoValueResolver',
-            'TargetPoint',
             'TargetableAttributeValueResolver',
             'TargetingDefinition',
-            'TcpNetDriver',
+            'TargetMetaInfoValueResolver',
+            'TargetPoint',
             'TcpipConnection',
+            'TcpNetDriver',
             'TeamInfo',
             'TeleporterDestination',
             'TeleporterFeedbackMessage',
@@ -2504,15 +813,14 @@ blcmm_orgs = {
             'TransformedFlagValueResolver',
             'TravelStationDefinition',
             'Trigger',
-            'TriggerStreamingLevel',
             'Trigger_PawnsOnly',
+            'TriggerStreamingLevel',
             'TurnDefinition',
             'TurretWeaponTypeDefinition',
             'TwoPanelInterfaceGFxDefinition',
             'UsableCustomizationItemDefinition',
             'UsableItemDefinition',
             'UsableItemPartDefinition',
-            'VSSUIDefinition',
             'Vehicle',
             'VehicleBalanceDefinition',
             'VehicleClassDefinition',
@@ -2527,6 +835,7 @@ blcmm_orgs = {
             'VehicleWheelDefinition',
             'VendingMachineExGFxDefinition',
             'VendingMachineGFxDefinition',
+            'VSSUIDefinition',
             'WaypointComponent',
             'WeaponAmmoResourceAttributeValueResolver',
             'WeaponAttributeContextResolver',
@@ -2558,8 +867,8 @@ blcmm_orgs = {
             'WillowDamagePipeline',
             'WillowDamageSource',
             'WillowDamageType',
-            'WillowDamageTypeDefinition',
             'WillowDamageType_Bullet',
+            'WillowDamageTypeDefinition',
             'WillowDmgSource_Bullet',
             'WillowDmgSource_CustomCrate',
             'WillowDmgSource_Grenade',
@@ -2583,13 +892,13 @@ blcmm_orgs = {
             'WillowDmgType_VehicleCollision',
             'WillowDownloadableContentManager',
             'WillowExplosionImpactDefinition',
+            'WillowGameInfo',
+            'WillowGameMessage',
+            'WillowGameReplicationInfo',
             'WillowGFxColiseumOverlayDefinition',
             'WillowGFxMovie3DDefinition',
             'WillowGFxThirdPersonDefinition',
             'WillowGFxUIManagerDefinition',
-            'WillowGameInfo',
-            'WillowGameMessage',
-            'WillowGameReplicationInfo',
             'WillowGlobals',
             'WillowHUDGFxMovieDefinition',
             'WillowImpactDefinition',
@@ -2623,16 +932,18 @@ blcmm_orgs = {
             },
         'Behaviors': {
             'AIBehaviorProviderDefinition',
-            'BehaviorAliasDefinition',
-            'BehaviorAliasLookupDefinition',
-            'BehaviorBase',
-            'BehaviorCollectionDefinition',
-            'BehaviorKernel',
-            'BehaviorProviderDefinition',
-            'BehaviorSequenceCustomEnableCondition',
-            'BehaviorSequenceEnableByMission',
-            'BehaviorSequenceEnableByMultipleConditions',
-            'BehaviorVolumeDefinition',
+            'Behavior_ActivateInstancedMissionBehaviorSequence',
+            'Behavior_ActivateListenerSkill',
+            'Behavior_ActivateMission',
+            'Behavior_ActivateSkill',
+            'Behavior_AddInstanceData',
+            'Behavior_AddInstanceDataFromBehaviorContext',
+            'Behavior_AddInventoryToStorage',
+            'Behavior_AddMissionDirectives',
+            'Behavior_AddMissionTime',
+            'Behavior_AddObjectInstanceData',
+            'Behavior_AdjustCameraAnimByEyeHeight',
+            'Behavior_AdvanceObjectiveSet',
             'Behavior_AIChangeInventory',
             'Behavior_AICloak',
             'Behavior_AIFollow',
@@ -2649,25 +960,13 @@ blcmm_orgs = {
             'Behavior_AITakeMoney',
             'Behavior_AITargeting',
             'Behavior_AIThrowProjectileAtTarget',
-            'Behavior_ActivateInstancedMissionBehaviorSequence',
-            'Behavior_ActivateListenerSkill',
-            'Behavior_ActivateMission',
-            'Behavior_ActivateSkill',
-            'Behavior_AddInstanceData',
-            'Behavior_AddInstanceDataFromBehaviorContext',
-            'Behavior_AddInventoryToStorage',
-            'Behavior_AddMissionDirectives',
-            'Behavior_AddMissionTime',
-            'Behavior_AddObjectInstanceData',
-            'Behavior_AdjustCameraAnimByEyeHeight',
-            'Behavior_AdvanceObjectiveSet',
             'Behavior_AssignBoolVariable',
             'Behavior_AssignFloatVariable',
             'Behavior_AssignIntVariable',
             'Behavior_AssignObjectVariable',
             'Behavior_AssignVectorVariable',
-            'Behavior_AttachAOEStatusEffect',
             'Behavior_AttachActor',
+            'Behavior_AttachAOEStatusEffect',
             'Behavior_AttachItems',
             'Behavior_AttemptItemCallout',
             'Behavior_AttemptStatusEffect',
@@ -2758,10 +1057,6 @@ blcmm_orgs = {
             'Behavior_ForceDownState',
             'Behavior_ForceInjured',
             'Behavior_ForceSave',
-            'Behavior_GFxMoviePlay',
-            'Behavior_GFxMovieRegister',
-            'Behavior_GFxMovieSetState',
-            'Behavior_GFxMovieStop',
             'Behavior_Gate',
             'Behavior_GetClosestEnemy',
             'Behavior_GetClosestPlayer',
@@ -2773,14 +1068,19 @@ blcmm_orgs = {
             'Behavior_GetVectorParam',
             'Behavior_GetVelocity',
             'Behavior_GetZoneVelocity',
+            'Behavior_GFxMoviePlay',
+            'Behavior_GFxMovieRegister',
+            'Behavior_GFxMovieSetState',
+            'Behavior_GFxMovieStop',
             'Behavior_GiveChallengeToPlayer',
             'Behavior_GiveInjuredPlayerSecondWind',
             'Behavior_HasMissions',
             'Behavior_HeadLookHold',
+            'Behavior_IncrementOverpowerLevel',
             'Behavior_IncrementPlayerStat',
+            'Behavior_InterpolateFloatOverTime',
             'Behavior_IntMath',
             'Behavior_IntSwitchRange',
-            'Behavior_InterpolateFloatOverTime',
             'Behavior_IsCensoredMode',
             'Behavior_IsObjectPlayer',
             'Behavior_IsObjectVehicle',
@@ -2961,27 +1261,33 @@ blcmm_orgs = {
             'Behavior_VoGScreenParticle',
             'Behavior_WeaponBoneControl',
             'Behavior_WeaponGlowEffect',
+            'Behavior_WeaponsRestriction',
             'Behavior_WeaponThrow',
             'Behavior_WeaponVisibleAmmoState',
-            'Behavior_WeaponsRestriction',
-            'OZBehavior_AddSkillTarget',
-            'OZBehavior_CloneMainhandWeaponToOffhand',
-            'OZBehavior_DestroyOffhandWeapon',
-            'OZBehavior_GetSkillTarget',
-            'OZBehavior_RemoveSkillTarget',
-            'OZBehavior_SetParticlePlayerOwner',
-            'OZPlayerBehavior_PlayAnimationOnMeleeWeaponMesh',
-            'OzBehavior_AIStartGravityWellState',
+            'BehaviorAliasDefinition',
+            'BehaviorAliasLookupDefinition',
+            'BehaviorBase',
+            'BehaviorCollectionDefinition',
+            'BehaviorKernel',
+            'BehaviorProviderDefinition',
+            'BehaviorSequenceCustomEnableCondition',
+            'BehaviorSequenceEnableByMission',
+            'BehaviorSequenceEnableByMultipleConditions',
+            'BehaviorVolumeDefinition',
             'OzBehavior_ActivateSkillWithGradeOf',
             'OzBehavior_ActorList',
             'OzBehavior_AddAmmoToClip',
             'OzBehavior_AddPlayerVelocity',
+            'OZBehavior_AddSkillTarget',
+            'OzBehavior_AIStartGravityWellState',
             'OzBehavior_ArrayAt',
             'OzBehavior_BroadcastCustomEventToList',
             'OzBehavior_ChangeOwnerVisibility',
             'OzBehavior_CheckReadiedWeaponsForManufacturer',
             'OzBehavior_ClearStatusEffect',
             'OzBehavior_ClearStatusEffectsType',
+            'OZBehavior_CloneMainhandWeaponToOffhand',
+            'OZBehavior_DestroyOffhandWeapon',
             'OzBehavior_ForceSpreadStatusEffect',
             'OzBehavior_Freeze',
             'OzBehavior_GenerateIdentifier',
@@ -2990,6 +1296,7 @@ blcmm_orgs = {
             'OzBehavior_GetGrenadeInfo',
             'OzBehavior_GetGrenadePartAlpha',
             'OzBehavior_GetRandomEnemyInRange',
+            'OZBehavior_GetSkillTarget',
             'OzBehavior_Gib',
             'OzBehavior_GiveEquipmentToAI',
             'OzBehavior_GiveGrenades',
@@ -2998,10 +1305,12 @@ blcmm_orgs = {
             'OzBehavior_IsTargetDead',
             'OzBehavior_MissionCustomPlayerEvent',
             'OzBehavior_NotifyInstinctSkillAction',
+            'OZBehavior_RemoveSkillTarget',
             'OzBehavior_SetAITarget',
             'OzBehavior_SetCollisionComponent',
             'OzBehavior_SetFaceFxAsset',
             'OzBehavior_SetForceDualWieldBlendState',
+            'OZBehavior_SetParticlePlayerOwner',
             'OzBehavior_SetPlayerFlag',
             'OzBehavior_SetPlayerVoiceFilter',
             'OzBehavior_ShareHealthPool',
@@ -3014,8 +1323,8 @@ blcmm_orgs = {
             'OzBehavior_TriggerSpawnProjectileFromHandsEvent',
             'OzBehavior_Vacuum',
             'OzPlayerBehavior_BloodRushAttack',
+            'OZPlayerBehavior_PlayAnimationOnMeleeWeaponMesh',
             'ParameterBehaviorBase',
-            'PlayerBehaviorBase',
             'PlayerBehavior_BlockDueling',
             'PlayerBehavior_CameraAnim',
             'PlayerBehavior_DropItems',
@@ -3036,7 +1345,7 @@ blcmm_orgs = {
             'PlayerBehavior_UnlockAchievement',
             'PlayerBehavior_UnlockAchievementForAllPlayers',
             'PlayerBehavior_ViewShake',
-            'ProjectileBehaviorBase',
+            'PlayerBehaviorBase',
             'ProjectileBehavior_Attach',
             'ProjectileBehavior_Bounce',
             'ProjectileBehavior_Detonate',
@@ -3049,6 +1358,7 @@ blcmm_orgs = {
             'ProjectileBehavior_SetSpeed',
             'ProjectileBehavior_SetStickyGrenade',
             'ProjectileBehavior_TagPayloadType',
+            'ProjectileBehaviorBase',
             'WillowVersusDuelBehavior',
             },
         'Dialog': {
@@ -3061,13 +1371,6 @@ blcmm_orgs = {
             'WillowDialogNameTag',
             },
         'Kismets': {
-            'GFxAction_CloseMovie',
-            'GFxAction_GetVariable',
-            'GFxAction_Invoke',
-            'GFxAction_OpenMovie',
-            'GFxAction_SetCaptureKeys',
-            'GFxAction_SetVariable',
-            'GFxEvent_FSCommand',
             'GearboxSeqAct_CameraShake',
             'GearboxSeqAct_DestroyPopulationActors',
             'GearboxSeqAct_PawnClonerLink',
@@ -3078,18 +1381,23 @@ blcmm_orgs = {
             'GearboxSeqAct_TriggerDialog',
             'GearboxSeqAct_TriggerDialogName',
             'GearboxSeqAct_TriggerSpecializedDialog',
+            'GFxAction_CloseMovie',
+            'GFxAction_GetVariable',
+            'GFxAction_Invoke',
+            'GFxAction_OpenMovie',
+            'GFxAction_SetCaptureKeys',
+            'GFxAction_SetVariable',
+            'GFxEvent_FSCommand',
             'InterpData',
-            'OZSeqCond_SwitchByCurrentWeaponType',
-            'OZSeqEvent_PlayerFired',
             'OzSeqAct_EncountersWave',
             'OzSeqAct_HideDroppedPickups',
             'OzSeqAct_SetVolumeGravity',
+            'OZSeqCond_SwitchByCurrentWeaponType',
+            'OZSeqEvent_PlayerFired',
             'PersistentSequenceData',
             'PrefabSequence',
             'PrefabSequenceContainer',
             'SavingSequenceFrame',
-            'SeqAct_AIAbortMoveToActor',
-            'SeqAct_AIMoveToActor',
             'SeqAct_AccessObjectList',
             'SeqAct_ActivateRemoteEvent',
             'SeqAct_ActorFactory',
@@ -3097,6 +1405,8 @@ blcmm_orgs = {
             'SeqAct_AddFloat',
             'SeqAct_AddInt',
             'SeqAct_AddRemoveFaceFXAnimSet',
+            'SeqAct_AIAbortMoveToActor',
+            'SeqAct_AIMoveToActor',
             'SeqAct_AkClearBanks',
             'SeqAct_AkLoadBank',
             'SeqAct_AkPostEvent',
@@ -3109,6 +1419,7 @@ blcmm_orgs = {
             'SeqAct_AllPlayersInVolume',
             'SeqAct_AndGate',
             'SeqAct_ApplyBehavior',
+            'SeqAct_ApplySoundNode',
             'SeqAct_AssignController',
             'SeqAct_AttachPlayerPawnToBase',
             'SeqAct_AttachToActor',
@@ -3160,13 +1471,13 @@ blcmm_orgs = {
             'SeqAct_LevelVisibility',
             'SeqAct_LoadingMovie',
             'SeqAct_Log',
-            'SeqAct_MITV_Activate',
             'SeqAct_MathBase',
             'SeqAct_MathFloat',
             'SeqAct_MathInteger',
+            'SeqAct_MITV_Activate',
             'SeqAct_ModifyCover',
-            'SeqAct_ModifyHUDElement',
             'SeqAct_ModifyHealth',
+            'SeqAct_ModifyHUDElement',
             'SeqAct_ModifyObjectList',
             'SeqAct_ModifyProperty',
             'SeqAct_MultiLevelStreaming',
@@ -3177,6 +1488,8 @@ blcmm_orgs = {
             'SeqAct_PlayBinkMovie',
             'SeqAct_PlayCameraAnim',
             'SeqAct_PlayFaceFXAnim',
+            'SeqAct_PlayMusicTrack',
+            'SeqAct_PlaySound',
             'SeqAct_Possess',
             'SeqAct_PossessForPlayer',
             'SeqAct_PrepareMapChange',
@@ -3190,15 +1503,16 @@ blcmm_orgs = {
             'SeqAct_SetBool',
             'SeqAct_SetCameraTarget',
             'SeqAct_SetChallengeCompleted',
-            'SeqAct_SetDOFParams',
             'SeqAct_SetDamageInstigator',
+            'SeqAct_SetDOFParams',
             'SeqAct_SetFloat',
             'SeqAct_SetInt',
             'SeqAct_SetLocation',
-            'SeqAct_SetMatInstScalarParam',
             'SeqAct_SetMaterial',
+            'SeqAct_SetMatInstScalarParam',
             'SeqAct_SetMesh',
             'SeqAct_SetMotionBlurParams',
+            'SeqAct_SetNameList',
             'SeqAct_SetObject',
             'SeqAct_SetParticleSysParam',
             'SeqAct_SetPhysics',
@@ -3206,6 +1520,7 @@ blcmm_orgs = {
             'SeqAct_SetSequenceVariable',
             'SeqAct_SetShadowParent',
             'SeqAct_SetSkelControlTarget',
+            'SeqAct_SetSoundMode',
             'SeqAct_SetString',
             'SeqAct_SetVector',
             'SeqAct_SetVectorComponents',
@@ -3221,8 +1536,8 @@ blcmm_orgs = {
             'SeqAct_ToggleCinematicMode',
             'SeqAct_ToggleConstraintDrive',
             'SeqAct_ToggleGodMode',
-            'SeqAct_ToggleHUD',
             'SeqAct_ToggleHidden',
+            'SeqAct_ToggleHUD',
             'SeqAct_ToggleInput',
             'SeqAct_Trace',
             'SeqAct_UnlockAchievement',
@@ -3265,9 +1580,9 @@ blcmm_orgs = {
             'SeqEvent_Destroyed',
             'SeqEvent_EncounterWaveComplete',
             'SeqEvent_HitWall',
-            'SeqEvent_LOS',
             'SeqEvent_LeavingMoveNode',
             'SeqEvent_LevelLoaded',
+            'SeqEvent_LOS',
             'SeqEvent_Mover',
             'SeqEvent_ParticleEvent',
             'SeqEvent_PickupStatusChange',
@@ -3288,6 +1603,17 @@ blcmm_orgs = {
             'SeqEvent_TrainingMessage',
             'SeqEvent_Used',
             'SeqEvent_WorldDiscoveryArea',
+            'Sequence',
+            'SequenceAction',
+            'SequenceCondition',
+            'SequenceDefinition',
+            'SequenceEvent',
+            'SequenceEventEnableByMission',
+            'SequenceFrame',
+            'SequenceFrameWrapped',
+            'SequenceObject',
+            'SequenceOp',
+            'SequenceVariable',
             'SeqVar_Bool',
             'SeqVar_Byte',
             'SeqVar_Character',
@@ -3300,6 +1626,7 @@ blcmm_orgs = {
             'SeqVar_Object',
             'SeqVar_ObjectList',
             'SeqVar_ObjectVolume',
+            'SeqVar_OverpowerLevel',
             'SeqVar_Player',
             'SeqVar_PrimaryLocalPlayer',
             'SeqVar_RandomFloat',
@@ -3307,19 +1634,9 @@ blcmm_orgs = {
             'SeqVar_String',
             'SeqVar_Union',
             'SeqVar_Vector',
-            'Sequence',
-            'SequenceAction',
-            'SequenceCondition',
-            'SequenceDefinition',
-            'SequenceEvent',
-            'SequenceEventEnableByMission',
-            'SequenceFrame',
-            'SequenceFrameWrapped',
-            'SequenceObject',
-            'SequenceOp',
-            'SequenceVariable',
             'Trigger_Dynamic',
             'Trigger_LOS',
+            'WillowSeqAct_ActivateInstancedBehaviorSequences',
             'WillowSeqAct_AICombatVolume',
             'WillowSeqAct_AILookAt',
             'WillowSeqAct_AIProvoke',
@@ -3330,7 +1647,6 @@ blcmm_orgs = {
             'WillowSeqAct_AIScriptedHold',
             'WillowSeqAct_AISetItemTossTarget',
             'WillowSeqAct_AIStopPerch',
-            'WillowSeqAct_ActivateInstancedBehaviorSequences',
             'WillowSeqAct_BossBar',
             'WillowSeqAct_CleanUpPlayerVehicles',
             'WillowSeqAct_ClientFlagGet',
@@ -3429,8 +1745,8 @@ blcmm_orgs = {
             'ApexStaticComponent',
             'ApexStaticDestructibleComponent',
             'CustomSkeletalMeshComponent',
-            'GearLikenessMeshComponent',
             'GearboxSkeletalMeshComponent',
+            'GearLikenessMeshComponent',
             'GestaltSkeletalMeshDefinition',
             'PerchPreviewComponent',
             'PhysicsJumpPreviewComponent',
@@ -3444,8 +1760,8 @@ blcmm_orgs = {
         'Missions': {
             'FailableMissionDirectiveWaypointComponent',
             'MissionDefinition',
-            'MissionDirectiveWaypointComponent',
             'MissionDirectivesDefinition',
+            'MissionDirectiveWaypointComponent',
             'MissionObjectiveDefinition',
             'MissionObjectiveSetBranchingDefinition',
             'MissionObjectiveSetCollectionDefinition',
@@ -3456,6 +1772,10 @@ blcmm_orgs = {
             },
         'Particles': {
             'EffectCollectionDefinition',
+            'Emitter',
+            'EmitterCameraLensEffectBase',
+            'EmitterPool',
+            'EmitterSpawnable',
             'OzParticleModuleLocationIceChunks',
             'OzParticleModuleLocationLine',
             'OzParticleModuleSound',
@@ -3482,12 +1802,12 @@ blcmm_orgs = {
             'ParticleModuleCollisionActor',
             'ParticleModuleCollisionBase',
             'ParticleModuleColor',
+            'ParticleModuleColor_Seeded',
             'ParticleModuleColorBase',
             'ParticleModuleColorByParameter',
             'ParticleModuleColorOverLife',
             'ParticleModuleColorScaleOverDensity',
             'ParticleModuleColorScaleOverLife',
-            'ParticleModuleColor_Seeded',
             'ParticleModuleEventBase',
             'ParticleModuleEventGenerator',
             'ParticleModuleEventGeneratorDecal',
@@ -3503,9 +1823,10 @@ blcmm_orgs = {
             'ParticleModuleKillBox',
             'ParticleModuleKillHeight',
             'ParticleModuleLifetime',
-            'ParticleModuleLifetimeBase',
             'ParticleModuleLifetime_Seeded',
+            'ParticleModuleLifetimeBase',
             'ParticleModuleLocation',
+            'ParticleModuleLocation_Seeded',
             'ParticleModuleLocationBase',
             'ParticleModuleLocationBoneSocket',
             'ParticleModuleLocationDirect',
@@ -3517,16 +1838,15 @@ blcmm_orgs = {
             'ParticleModuleLocationPrimitiveSphere',
             'ParticleModuleLocationPrimitiveSphere_Seeded',
             'ParticleModuleLocationSkelVertSurface',
-            'ParticleModuleLocation_Seeded',
             'ParticleModuleMaterialBase',
             'ParticleModuleMaterialByParameter',
             'ParticleModuleMeshMaterial',
             'ParticleModuleMeshRotation',
+            'ParticleModuleMeshRotation_Seeded',
             'ParticleModuleMeshRotationRate',
+            'ParticleModuleMeshRotationRate_Seeded',
             'ParticleModuleMeshRotationRateMultiplyLife',
             'ParticleModuleMeshRotationRateOverLife',
-            'ParticleModuleMeshRotationRate_Seeded',
-            'ParticleModuleMeshRotation_Seeded',
             'ParticleModuleOrbit',
             'ParticleModuleOrbitBase',
             'ParticleModuleOrientationAxisLock',
@@ -3536,21 +1856,21 @@ blcmm_orgs = {
             'ParticleModuleParameterDynamic_Seeded',
             'ParticleModuleRequired',
             'ParticleModuleRotation',
+            'ParticleModuleRotation_Seeded',
             'ParticleModuleRotationBase',
             'ParticleModuleRotationOverLifetime',
             'ParticleModuleRotationRate',
+            'ParticleModuleRotationRate_Seeded',
             'ParticleModuleRotationRateBase',
             'ParticleModuleRotationRateMultiplyLife',
-            'ParticleModuleRotationRate_Seeded',
-            'ParticleModuleRotation_Seeded',
             'ParticleModuleSize',
+            'ParticleModuleSize_Seeded',
             'ParticleModuleSizeBase',
             'ParticleModuleSizeMultiplyLife',
             'ParticleModuleSizeMultiplyVelocity',
             'ParticleModuleSizeScale',
             'ParticleModuleSizeScaleByTime',
             'ParticleModuleSizeScaleOverDensity',
-            'ParticleModuleSize_Seeded',
             'ParticleModuleSourceMovement',
             'ParticleModuleSpawn',
             'ParticleModuleSpawnBase',
@@ -3586,12 +1906,13 @@ blcmm_orgs = {
             'ParticleModuleUberRainSplashA',
             'ParticleModuleUberRainSplashB',
             'ParticleModuleVelocity',
+            'ParticleModuleVelocity_Seeded',
             'ParticleModuleVelocityBase',
             'ParticleModuleVelocityInheritParent',
             'ParticleModuleVelocityOverLifetime',
-            'ParticleModuleVelocity_Seeded',
             'ParticleSpriteEmitter',
             'ParticleSystem',
+            'ParticleSystemComponent',
             },
         'Populations': {
             'PopulationDefinition',
@@ -3622,8 +1943,8 @@ blcmm_orgs = {
             'WillowPopulationMaster',
             'WillowPopulationOpportunityPoint',
             'WillowPopulationPoint',
-            'WillowPopulationPointDefinition',
             'WillowPopulationPoint_Dynamic',
+            'WillowPopulationPointDefinition',
             },
         'Skins': {
             'DecalMaterial',
@@ -3679,8 +2000,8 @@ blcmm_orgs = {
             'SpecialMove_PhaseLock',
             'SpecialMove_PhysicsJump',
             'SpecialMove_PopulationPoint',
-            'SpecialMove_SpawnOnWall',
             'SpecialMove_Spawned',
+            'SpecialMove_SpawnOnWall',
             'SpecialMove_Turn',
             'SpecialMove_Vehicle',
             'SpecialMove_WeaponAction',
@@ -3714,13 +2035,13 @@ blcmm_orgs = {
             'WillowUsableCustomizationItem',
             'WillowUsableItem',
             'WillowVehicle',
-            'WillowVehicleBase',
-            'WillowVehicleWeapon',
             'WillowVehicle_ChopperVehicle',
             'WillowVehicle_FlyingVehicle',
             'WillowVehicle_Tank',
             'WillowVehicle_Turret',
             'WillowVehicle_WheeledVehicle',
+            'WillowVehicleBase',
+            'WillowVehicleWeapon',
             'WillowVendingMachine',
             'WillowVendingMachineBase',
             'WillowVendingMachineBlackMarket',
@@ -3728,136 +2049,1013 @@ blcmm_orgs = {
             'WillowWeapon',
             'WillowWeaponPawn',
             },
-        },
-    }
-blcmm_org = blcmm_orgs[game]
+        }
 
-# Loop through and find all dump files, and construct an 'Others' datafile
-# based on all classes not explicitly categorized.
-classes_to_skip = {}
-if args.others:
-    all_classes = set()
-    for filename in os.listdir(input_dir):
-        if filename.endswith('.dump'):
-            all_classes.add(filename[:-5])
-        elif filename.endswith('.dump.xz'):
-            all_classes.add(filename[:-8])
-    for (cat_name, classes) in blcmm_org.items():
-        classes_to_skip[cat_name] = set()
-        for classname in classes:
-            if classname in all_classes:
-                all_classes.remove(classname)
+
+class Category:
+    """
+    Class to hold info about a single category
+    """
+
+    def __init__(self, name, classes):
+        self.name = name
+        self.classes = set()
+        for classname in sorted(classes, key=str.casefold):
+            self.classes.add(classname.lower())
+        self.id = None
+
+    def __lt__(self, other):
+        return self.name.casefold() < other.name.casefold()
+
+    def populate_db(self, conn, curs):
+        """
+        Populate ourself in the database.
+        """
+        curs.execute('insert into category (name) values (?)',
+                (self.name,))
+        self.id = curs.lastrowid
+
+
+class CategoryRegistry:
+    """
+    Class to hold info about all the Categories we know about.
+    Basically just a glorified dict.
+    """
+
+    def __init__(self):
+        self.cats = {}
+        self.class_lookup = {}
+        self.add('Others', set())
+
+    def __getitem__(self, key):
+        """
+        Act like a dict
+        """
+        return self.cats[key.lower()]
+
+    def add(self, name, classes):
+        """
+        Create a new category
+        """
+        new_cat = Category(name, classes)
+        self.cats[name.lower()] = new_cat
+        for classname in new_cat.classes:
+            if classname in self.class_lookup:
+                raise RuntimeError(f'Class {classname} is in more than one category')
+            self.class_lookup[classname] = new_cat
+        return new_cat
+
+    def get_by_classname(self, classname):
+        classname = classname.lower()
+        if classname not in self.class_lookup:
+            other = self['others']
+            other.classes.add(classname)
+            self.class_lookup[classname] = other
+        return self.class_lookup[classname]
+
+    def populate_db(self, conn, curs):
+        """
+        Kick off populating the database, once we have the entire set.
+        """
+        for cat in sorted(self.cats.values()):
+            cat.populate_db(conn, curs)
+        conn.commit()
+
+
+class UEClass:
+    """
+    Class to hold info about a single UE Class.
+    """
+
+    def __init__(self, name, category):
+        self.name = name
+        self.category = category
+        self.id = None
+        self.parent = None
+        self.children = []
+        self.total_children = 0
+        self.aggregate_ids = set()
+        self.num_datafiles = 0
+        self.attr_names = set()
+
+    def __lt__(self, other):
+        # BLCMM's historically sorted *with* case sensitivity, but nuts to that.  I've long
+        # since come to terms with case-insensitive sorting.  :)  Swap these around to
+        # order differently.  (Note that this technically only has bearing on the row
+        # ordering in the DB, of course -- the Java app's free to sort however it likes.)
+        #return self.name < other.name
+        return self.name.casefold() < other.name.casefold()
+
+    def set_parent(self, parent):
+        """
+        Sets our parent, and sets the reciprocal `children` reference on
+        the parent obj
+        """
+        if self.parent is not None:
+            raise RuntimeError(f'{self.name} already has parent {self.parent}, tried to add {parent}!')
+        self.parent = parent
+        self.parent.children.append(self)
+
+    def display(self, level=0):
+        """
+        Print out the class tree starting at this level
+        """
+        print('  '*level + ' -> ' + self.name)
+        for child in sorted(self.children):
+            child.display(level+1)
+
+    def populate_db(self, conn, curs):
+        """
+        Recursively populate ourselves in the database.  Intended to be called
+        initially from the top-level `Object` class.
+        """
+        if self.parent is None:
+            curs.execute('insert into class (name, category, num_children) values (?, ?, ?)',
+                    (self.name, self.category.id, len(self.children)))
+        else:
+            curs.execute('insert into class (name, category, num_children, parent) values (?, ?, ?, ?)',
+                    (self.name, self.category.id, len(self.children), self.parent.id))
+        self.id = curs.lastrowid
+        for child in sorted(self.children):
+            child.populate_db(conn, curs)
+            curs.execute('insert into class_children (parent, child) values (?, ?)',
+                    (self.id, child.id))
+
+    def inc_children(self):
+        """
+        Keeping track of how many objects in total are of this class
+        type (including objects belonging to a descendant of this class).
+        Used to denormalize that info in the DB, to provide some info to
+        the user when clicking through the tree.  With our current schema,
+        this is probably gonna be ignored entirely 'cause our performance
+        for building the trees shouldn't care.  Still, no good reason
+        *not* to keep it in here, since we've already implemented it.
+        """
+
+        self.total_children += 1
+        if self.parent is not None:
+            self.parent.inc_children()
+
+    def fix_total_children_and_datafiles(self, conn, curs):
+        """
+        Store our `total_children` value in the database.  When building the DB
+        we process the Classes first, then Objects, but we don't have this
+        information until we're through with the Object processing, so we've
+        gotta come back after the fact and update the record.
+
+        This also updates `num_datafiles` as well, since that's something else
+        we don't know until we've processed objects
+        """
+        curs.execute('update class set total_children=?, num_datafiles=? where id=?',
+                (self.total_children, self.num_datafiles, self.id))
+
+    def store_attr_names(self, conn, curs):
+        """
+        This table stores all valid attributes for the class that we've seen in
+        the data dumps so far.  Like `fix_total_children_and_datafiles` above,
+        we can't actually do this until we've processed all objects, which is why
+        we're not bothering until later.
+        """
+        for attr_name in sorted(self.attr_names):
+            curs.execute('insert into attr_name (class, name) values (?, ?)',
+                    (self.id, attr_name))
+
+    def set_aggregate_ids(self, ids=None):
+        """
+        Sets our "aggregate" IDs.  This basically lets us easily know the
+        full inheritance path for a given class.  For instance, an
+        `ItemPoolDefinition` object is also a `GBXDefinition` object, and
+        an instance of the top-level `Object`.  We need to know about that
+        because we technically want to show all ItemPoolDefinition objects
+        when the user's clicked on GBXDfinition, so having the info
+        denormalized is pretty helpful.
+        """
+        if ids is None:
+            ids = {self.id}
+        else:
+            ids = set(ids)
+            ids.add(self.id)
+        self.aggregate_ids |= ids
+        for child in self.children:
+            child.set_aggregate_ids(self.aggregate_ids)
+
+    def store_aggregate_ids(self, conn, curs):
+        """
+        And here's where we store those aggregate IDs in the database, once we've
+        walked the whole tree and generated it.  Note that there's not really much
+        call to store this in the DB -- we use the information in this script to
+        generate the huge and actually-useful `object_show_class_ids` class, but
+        probably nothing in OE will actually query this table.  Still, compared to
+        the size of the rest of the DB, this is pretty small potatoes, so we may
+        as well store it anyway.
+        """
+        for idnum in sorted(self.aggregate_ids):
+            curs.execute('insert into class_aggregate (id, aggregate) values (?, ?)',
+                    (self.id, idnum))
+
+    def store_subclasses(self, conn, curs, from_class=None):
+        """
+        This table is sort of the inverse of `class_aggregate` -- it lets us know
+        (recursively) all subclasses of this class.
+        """
+        if from_class is None:
+            from_class = self.id
+        curs.execute('insert into class_subclass (class, subclass) values (?, ?)',
+                (from_class, self.id))
+        for child in self.children:
+            child.store_subclasses(conn, curs, from_class)
+
+    def add_attr(self, attr_name):
+        self.attr_names.add(attr_name)
+
+
+class ClassRegistry:
+    """
+    Class to hold info about all the UE Classes we know about.
+    Basically just a glorified dict.
+    """
+
+    def __init__(self):
+        self.classes = {}
+
+    def __getitem__(self, key):
+        """
+        Act like a dict
+        """
+        return self.classes[key]
+
+    def get_or_add(self, name, cat_reg):
+        """
+        This is here to support dynamically building out the tree from arbitrary
+        starting locations; this way we can request parent entries and if they
+        don't already exist, they'll get created -- if they *do* already exist,
+        they'll just get returned, so we can link up parents/children properly.
+        """
+        if name.strip() == 'None':
+            return None
+        category = cat_reg.get_by_classname(name)
+        if name not in self.classes:
+            self.classes[name] = UEClass(name, category)
+        return self.classes[name]
+
+    def populate_db(self, conn, curs):
+        """
+        Kick off populating the database, once we have the entire tree.  We
+        assume that `Object` is the single top-level entry.
+        """
+        self['Object'].populate_db(conn, curs)
+        conn.commit()
+
+    def fix_post_object_data(self, conn, curs):
+        """
+        Once we've walked through the entire Object Registry, there's a couple
+        of bits of data which we can loop back around and "fix" for the
+        Class entries.  This takes care of both the `total_children` metric,
+        the `num_datafiles` count, and our attribute names.
+
+        This method now also updates the num_datafiles count as well, since
+        that's another thing we can only know after processing objects.
+        """
+        for class_obj in self.classes.values():
+            class_obj.fix_total_children_and_datafiles(conn, curs)
+            class_obj.store_attr_names(conn, curs)
+        conn.commit()
+
+    def set_aggregate_ids(self):
+        """
+        This kicks off calculating the "aggregate" IDs which lets us have a
+        shortcut to the whole object inheritance structure.  See the docs
+        inside `Class` for a bit more info on that.  We assume that `Object`
+        is the single top-level entry.
+        """
+        self.classes['Object'].set_aggregate_ids()
+
+    def store_aggregate_ids(self, conn, curs):
+        """
+        Once all our aggregate IDs have been computed, this updates the database
+        with the freshly-populated values.
+        """
+        for class_obj in self.classes.values():
+            class_obj.store_aggregate_ids(conn, curs)
+        conn.commit()
+
+    def store_subclasses(self, conn, curs):
+        """
+        Store our subclass mapping information.
+        """
+        for class_obj in self.classes.values():
+            class_obj.store_subclasses(conn, curs)
+        conn.commit()
+
+
+class UEObject:
+    """
+    Class to hold info about a single UE Object
+    """
+
+    def __init__(self, name, short_name,
+            separator=None,
+            parent=None,
+            class_obj=None,
+            file_index=None,
+            file_position=None,
+            ):
+        self.name = name
+        self.short_name = short_name
+        self.separator = separator
+        self.parent = parent
+        if self.parent is not None:
+            self.parent.children.append(self)
+        self.class_obj = class_obj
+        self.file_index = file_index
+        self.file_position = file_position
+        self.bytes = None
+        self.id = None
+        self.children = []
+        self.total_children = 0
+        self.show_class_ids = set()
+        self.has_class_children = set()
+
+    def __lt__(self, other):
+        return self.name.casefold() < other.name.casefold()
+
+    def inc_children(self):
+        """
+        Recursively keep track of how many child objects exist here.  This
+        number's primarily just used so we know whether the entry in the
+        tree needs to be expandable or not.
+        """
+        self.total_children += 1
+        if self.parent is not None:
+            self.parent.inc_children()
+
+    def populate_db(self, conn, curs):
+        """
+        Recursively inserts ourself and all children into the database, once
+        the whole tree structure's been built in memory.
+        """
+        fields = [
+                'name',
+                'short_name',
+                'num_children',
+                'total_children',
+                ]
+        values = [
+                self.name,
+                self.short_name,
+                len(self.children),
+                self.total_children,
+                ]
+        if self.class_obj is not None:
+            fields.append('class')
+            values.append(self.class_obj.id)
+        if self.parent is not None:
+            fields.append('parent')
+            values.append(self.parent.id)
+        if self.separator is not None:
+            fields.append('separator')
+            values.append(self.separator)
+        if self.file_index is not None:
+            fields.append('file_index')
+            values.append(self.file_index)
+        if self.file_position is not None:
+            fields.append('file_position')
+            values.append(self.file_position)
+            fields.append('bytes')
+            values.append(self.bytes)
+        curs.execute('insert into object ({}) values ({})'.format(
+            ', '.join(fields),
+            ', '.join(['?']*len(fields)),
+            ), values)
+        self.id = curs.lastrowid
+        for child in sorted(self.children):
+            child.populate_db(conn, curs)
+            curs.execute('insert into object_children (parent, child) values (?, ?)',
+                    (self.id, child.id))
+
+    def set_show_class_ids(self, ids=None):
+        """
+        Calculate what Class IDs result in showing this object.  For instance, if
+        the user clicks on the top-level `Object`, we'd be showing basically
+        everything.  If they click on `ItemPoolDefinition`, we'd want to mark
+        all `CrossDLCItemPoolDefinition` and `KeyedItemPoolDefinition` as shown
+        as well, since those classes inherit from `ItemPoolDefinition`.  This is
+        basically just a big ol' denormalization which we're using to increase
+        performance -- it lets us find valid children based on class with a single
+        SELECT statement (with just a single indexed join) which should be pretty
+        fast even in the worst-case scenario.
+
+        It does come at the cost of database size, though!  During development on
+        the BL2 dataset, this increases the uncompressed database size by over
+        200MB.
+
+        The has_class_children field is used to assist with the tree rendering
+        in BLCMM -- a simple boolean so that the tree-building routines know
+        right away whether a UEObject is a leaf or not, so it can skip adding
+        a "dummy" entry where one isn't needed.
+        """
+        if ids is None:
+            if self.class_obj is None:
+                return
+            ids = self.class_obj.aggregate_ids
+        else:
+            # The only way to get here is if we're a recursive call to a parent,
+            # which means that this object has children for this class.  So,
+            # mark that down
+            self.has_class_children |= ids
+        self.show_class_ids |= ids
+        if self.parent is not None:
+            self.parent.set_show_class_ids(ids)
+
+    def store_show_class_ids(self, conn, curs):
+        """
+        Once all our shown class IDs have been populated, insert that into the
+        database.  Note that for BL2 data, this results in over seven million
+        rows in the table!
+        """
+        for idnum in sorted(self.show_class_ids):
+            if idnum in self.has_class_children:
+                has_children = 1
             else:
-                classes_to_skip[cat_name].add(classname)
-    blcmm_org['Others'] = sorted(all_classes)
-    classes_to_skip['Others'] = set()
+                has_children = 0
+            curs.execute('insert into object_show_class_ids (id, class, has_children) values (?, ?, ?)',
+                    (self.id, idnum, has_children))
 
-for cat_name in blcmm_org.keys():
-    for class_to_skip in classes_to_skip[cat_name]:
-        blcmm_org[cat_name].remove(class_to_skip)
 
-if not os.path.isdir(output_dir):
-    os.mkdir(output_dir)
+class ObjectRegistry:
+    """
+    Class to hold information about *all* of our UE Objects
+    """
 
-index_files = []
+    def __init__(self):
+        self.objects = {}
 
-main_index_file = 'index.index'
-index_files.append(main_index_file)
+    def get_or_add(self, name,
+            class_obj=None,
+            index=None,
+            position=None,
+            ):
+        """
+        Much like in ClassRegistry, this method assists us in building out the
+        tree from arbitrary starting points, so we can re-use parent objects
+        when necessary, to keep the tree structure clean.
+        """
+        if name in self.objects:
+            # Fill in some data that could have been left out by building
+            # our parent/child tree while looping
+            if class_obj is not None:
+                obj = self.objects[name]
+                obj.class_obj = class_obj
+                obj.file_position = position
+                obj.file_index = index
+                class_obj.inc_children()
+        else:
+            # Otherwise, we're adding a new object
+            split_idx = max(name.rfind('.'), name.rfind(':'))
+            if split_idx == -1:
+                self.objects[name] = UEObject(name, name,
+                        class_obj=class_obj,
+                        file_index=index,
+                        file_position=position,
+                        )
+            else:
+                parent = self.get_or_add(name[:split_idx])
+                parent.inc_children()
+                if class_obj is not None:
+                    class_obj.inc_children()
+                self.objects[name] = UEObject(name, name[split_idx+1:],
+                        separator=name[split_idx],
+                        parent=parent,
+                        class_obj=class_obj,
+                        file_index=index,
+                        file_position=position,
+                        )
 
-with open(os.path.join(input_dir, main_index_file), 'w', newline="\r\n") as main_idx_odf:
+        return self.objects[name]
 
-    for (cat_name, classes) in blcmm_org.items():
-        print('Processing {}...'.format(cat_name))
-        data_files = []
+    def get_top_levels(self):
+        """
+        Returns all top-level objects
+        """
+        for obj in self.objects.values():
+            if obj.parent is None:
+                yield obj
 
-        print(cat_name, file=main_idx_odf)
+    def populate_db(self, args, conn, curs):
+        """
+        Populates the database once the tree has been constructed
+        """
+        for obj in sorted(self.get_top_levels()):
+            if args.verbose:
+                print(f"\r > {obj.name:70}", end='')
+            obj.populate_db(conn, curs)
+            conn.commit()
+        if args.verbose:
+            print("\r   {:70}".format('Done!'))
 
-        # First write out our .list file
-        list_file = '{}.list'.format(cat_name)
-        data_files.append(list_file)
-        index_file = '{}.class.index'.format(cat_name)
-        index_files.append(index_file)
-        with open(os.path.join(input_dir, list_file), 'w', newline="\r\n") as odf:
-            with open(os.path.join(input_dir, index_file), 'w', newline="\r\n") as idx_odf:
-                for class_name in sorted(classes):
-                    print(class_name, file=odf)
-                    print(class_name, file=idx_odf)
+    def set_show_class_ids(self):
+        """
+        Kicks off the process of deciding which class IDs trigger showing
+        which objects.  See the docs in `UEObject` for some more info on
+        all that.
+        """
+        for obj in self.objects.values():
+            obj.set_show_class_ids()
 
-        # Object index file...
-        obj_index_file = '{}.index'.format(cat_name)
-        index_files.append(obj_index_file)
-        with open(os.path.join(input_dir, obj_index_file), 'w', newline="\r\n") as idx_odf:
+    def store_show_class_ids(self, conn, curs):
+        """
+        Once we have those shown-class-ID attributes set properly, add them
+        into the database.
+        """
+        for obj in self.objects.values():
+            obj.store_show_class_ids(conn, curs)
+        conn.commit()
 
-            # Now the data files...
-            for class_name in sorted(classes):
 
-                # Make sure to include the .dump files
-                dump_file = '{}.dump'.format(class_name)
+def get_category_registry(categories):
+    """
+    Populate a CategoryRegistry object
+    """
 
-                # Generate a .dict file for each one
-                dict_file = '{}.dict'.format(class_name)
+    cat_reg = CategoryRegistry()
+    for key, values in sorted(categories.items(), key=lambda t: t[0].casefold()):
+        cat_reg.add(key, values)
+    return cat_reg
 
-                dump_file_full = os.path.join(input_dir, dump_file)
-                if os.path.exists(dump_file_full):
-                    df = open(dump_file_full, encoding='latin1')
-                elif os.path.exists('{}.xz'.format(dump_file_full)):
-                    df = lzma.open('{}.xz'.format(dump_file_full), 'rt', encoding='latin1')
+
+def get_class_registry(categorized_dir, cat_reg):
+    """
+    Populate a ClassRegistry object using the `Default__*` dumps at the beginning
+    of our already-categorized dump files.
+    """
+
+    cr = ClassRegistry()
+    for filename in sorted(os.listdir(categorized_dir)):
+        if not filename.endswith('.dump.xz'):
+            continue
+        class_obj = cr.get_or_add(filename[:-8], cat_reg)
+        with lzma.open(os.path.join(categorized_dir, filename), 'rt', encoding='latin1') as df:
+            for line in df:
+                if line.startswith('  ObjectArchetype='):
+                    parent_name = cr.get_or_add(line.split('=', 1)[1].split("'", 1)[0], cat_reg)
+                    if parent_name is not None:
+                        class_obj.set_parent(parent_name)
+                    break
+
+    return cr
+
+
+def get_object_registry(dest_dir, args, cr, quick):
+    """
+    Creates our object registry
+    """
+
+    max_bytes = args.max_dump_size*1024*1024
+
+    obj_reg = ObjectRegistry()
+    for filename in sorted(os.listdir(args.categorized_dir)):
+        if not filename.endswith('.dump.xz'):
+            continue
+        class_obj = cr[filename[:-8]]
+        with lzma.open(os.path.join(args.categorized_dir, filename), 'rt', encoding='latin1') as df:
+            pos = 0
+            cur_index = 1
+            odf = None
+            new_obj = None
+            inner_class = None
+            for line in df:
+                if line.startswith('*** Property dump for object'):
+                    if new_obj is not None:
+                        new_obj.bytes = pos-new_obj.file_position
+                    obj_name = line.split("'")[1].split(' ')[-1]
+                    new_obj = obj_reg.get_or_add(obj_name, class_obj, cur_index, pos)
+                    if odf is None or pos >= max_bytes:
+                        if odf is not None:
+                            odf.close()
+                            cur_index += 1
+                        if args.verbose:
+                            print("\r > {:70}".format(
+                                f'{class_obj.name}.dump.{cur_index}'), end='')
+                        odf = open(os.path.join(dest_dir, f'{class_obj.name}.dump.{cur_index}'), 'wt', encoding='latin1')
+                        pos = 0
+                        class_obj.num_datafiles += 1
+                elif line.startswith('=== '):
+                    parts = line.split(' ', 3)
+                    if len(parts) == 4 and parts[2] == 'properties':
+                        if parts[1] == 'Native':
+                            # These show up in the dumps but that's not a class, and they're not
+                            # formatted like everything else.  Make sure we don't try to do
+                            # anything with those.
+                            inner_class = None
+                        else:
+                            inner_class = cr[parts[1]]
+                elif inner_class is not None and line.startswith('  '):
+                    # If dumps have been taken without the array limit fix in place, they may
+                    # have lines like `  ... 1 more elements`.  This prevents us from trying
+                    # to read those.
+                    if not line.startswith('  ...'):
+                        attr_name = line[2:line.index('=')]
+                        if '(' in attr_name:
+                            attr_name = attr_name[:attr_name.index('(')]
+                    inner_class.add_attr(attr_name)
+                odf.write(line.lstrip())
+                pos = odf.tell()
+            if new_obj is not None:
+                new_obj.bytes = odf.tell()-new_obj.file_position
+            odf.close()
+        # Break here to only process the first of the dump files
+        if args.quick:
+            break
+    if args.verbose:
+        print("\r   {:70}".format('Done!'))
+    return obj_reg
+
+
+def write_schema(conn, curs):
+    """
+    Given a database object `conn` and cursor `curs`, initialize our schema.
+    Returns the database version number to put into the metadata table.
+
+    Show all top-level object entries which should be shown for class ID 1683:
+        select o.* from object o, object_show_class_ids i where o.id=i.id and i.class=1683 and parent is null;
+
+    Then drill down to a specific entry:
+        select o.* from object o, object_show_class_ids i where o.id=i.id and i.class=1683 and parent=604797;
+    """
+
+    db_vers = 1
+
+    # Metadata
+    curs.execute("""
+        create table metadata (
+            db_version int not null,
+            dump_version text not null,
+            compiled datetime not null
+        )
+        """)
+    # Class categories
+    curs.execute("""
+        create table category (
+            id integer primary key autoincrement,
+            name text not null collate nocase,
+            unique (name collate nocase)
+        )
+        """)
+    # Info about a particular class
+    curs.execute("""
+        create table class (
+            id integer primary key autoincrement,
+            name text not null collate nocase,
+            category integer not null references category (id),
+            parent integer references class (id),
+            num_children int not null default 0,
+            total_children int not null default 0,
+            num_datafiles int not null default 0,
+            unique (name collate nocase)
+        )
+        """)
+    # Direct class children, for generating the GUI tree
+    curs.execute("""
+        create table class_children (
+            parent integer not null references class (id),
+            child integer not null references class (id),
+            unique (parent, child)
+        )
+        """)
+    # "Aggregate" class IDs, allowing us to know with a single query what
+    # the whole inheritance tree is.  (For instance, the aggregates for
+    # the `AIBehaviorProviderDefinition` class will also include the IDs
+    # for `BehaviorProviderDefinition`, `GBXDefinition`, and `Object`.
+    curs.execute("""
+        create table class_aggregate (
+            id integer not null references class (id),
+            aggregate integer not null references class (id),
+            unique (id, aggregate)
+        )
+        """)
+    # Subclass info -- sort of the opposite of class_aggregate.  Starting
+    # from the primary-key class, it lets us know all subclass types as well.
+    curs.execute("""
+        create table class_subclass (
+            class integer not null references class (id),
+            subclass integer not null references class (id),
+            unique (class, subclass)
+        )
+        """)
+    # Info about a particular object (may not *actually* be an object;
+    # this also includes folder-only elements of the tree)
+    curs.execute("""
+        create table object (
+            id integer primary key autoincrement,
+            name text not null collate nocase,
+            short_name text not null collate nocase,
+            class integer references class (id),
+            parent integer references object (id),
+            separator character(1),
+            file_index int,
+            file_position int,
+            bytes int,
+            num_children int not null default 0,
+            total_children int not null default 0,
+            unique (name collate nocase)
+        )
+        """)
+    curs.execute('create index idx_object_parent on object(parent)')
+    # Direct object children, for generating the GUI tree
+    curs.execute("""
+        create table object_children (
+            parent integer not null references object (id),
+            child integer not null references object (id),
+            unique (parent, child)
+        )
+        """)
+    # The list of Class IDs which this object should show up "under",
+    # when selected by Class Explorer
+    curs.execute("""
+        create table object_show_class_ids (
+            id integer not null references object (id),
+            class integer not null references class (id),
+            has_children tinyint not null default 0,
+            unique (id, class)
+        )
+        """)
+    # Very custom-purpose table for autocompleting Enum names
+    curs.execute("""
+        create table enum (
+            id integer primary key autoincrement,
+            name text not null collate nocase,
+            unique (name collate nocase)
+        )
+        """)
+    # Another custom-purpose table for autocompleting attr names based
+    # on the class
+    curs.execute("""
+        create table attr_name (
+            id integer primary key autoincrement,
+            class integer not null references class (id),
+            name text not null collate nocase,
+            unique (class, name)
+        )
+        """)
+    curs.execute('create index idx_attr_name on attr_name(name collate nocase)')
+    conn.commit()
+
+    return db_vers
+
+def main():
+
+    parser = argparse.ArgumentParser(
+            description="Populate new-style BLCMM data dumps (for 2023)",
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+            )
+
+    parser.add_argument('-s', '--sqlite',
+            type=str,
+            default='data.db',
+            help="SQLite database file to write to (wiping if needed, first)",
+            )
+
+    parser.add_argument('-d', '--dump-version',
+            type=str,
+            default='2023.03.26.01',
+            help="Dump Version Number",
+            )
+
+    parser.add_argument('-g', '--game-name',
+            type=str,
+            required=True,
+            choices=['bl2', 'tps'],
+            help="The game we're generating data for",
+            )
+
+    parser.add_argument('-c', '--categorized-dir',
+            type=str,
+            default='categorized',
+            help="Directory containing categorized .dump.xz output",
+            )
+
+    parser.add_argument('-o', '--output-dir',
+            type=str,
+            default='generated_blcmm_data',
+            help="Output directory",
+            )
+
+    parser.add_argument('-m', '--max-dump-size',
+            type=int,
+            default=10,
+            help="Maximum data dump file size",
+            )
+
+    parser.add_argument('-e', '--enum-file',
+            type=str,
+            default='enums.dat',
+            help='Location of Enum datafile, to help populate an autocomplete table',
+            )
+
+    parser.add_argument('-q', '--quick',
+            action='store_true',
+            help='''
+                "Quick" processing which only processes the very first classs found
+                in the data.  Used for testing out the generation process without
+                having to wait for the entire dataset.
+                ''',
+            )
+
+    # Eh, not gonna bother even providing this option; honestly not sure under
+    # what circumstances you *wouldn't* want this output.
+    if False:
+        parser.add_argument('-v', '--verbose',
+                action='store_true',
+                help="Verbose output while running.  (Does NOT imply the various --show-* options)",
+                )
+
+    parser.add_argument('--show-class-tree',
+            action='store_true',
+            help="Show the generated class tree after constructing it",
+            )
+
+    # Parse args
+    args = parser.parse_args()
+    args.verbose = True
+
+    # Doublecheck to make sure we can read our Enum datafile
+    if not os.path.exists(args.enum_file):
+        print('')
+        print(f'ERROR: "{args.enum_file}" could not be found!  You may have to copy it from')
+        print("the `resources` directory to wherever you're running this script.")
+        print('')
+        sys.exit(1)
+
+    # Keep track of when we started
+    start = time.time()
+
+    # Wipe + recreate our sqlite DB if necessary
+    if args.verbose:
+        print('Database:')
+    inner_db_dir = os.path.join('data', args.game_name.upper())
+    full_db_dir = os.path.join(args.output_dir, inner_db_dir)
+    if not os.path.exists(full_db_dir):
+        os.makedirs(full_db_dir, exist_ok=True)
+    inner_db_file = os.path.join(inner_db_dir, args.sqlite)
+    full_db_file = os.path.join(full_db_dir, args.sqlite)
+    if os.path.exists(full_db_file):
+        if args.verbose:
+            print(f' - Cleaning old DB: {full_db_file}')
+        os.unlink(full_db_file)
+    if args.verbose:
+        print(f' - Creating new DB: {full_db_file}')
+    conn = sqlite3.connect(full_db_file)
+    curs = conn.cursor()
+    db_vers = write_schema(conn, curs)
+
+    # Write out metadata
+    if args.verbose:
+        print(' - Writing DB Metadata')
+    curs.execute('insert into metadata (db_version, dump_version, compiled) values (?, ?, ?)',
+            (db_vers, args.dump_version, datetime.datetime.now()))
+    conn.commit()
+
+    # Write enum info
+    if args.verbose:
+        print(' - Storing Enum Names')
+    enum_ignore = {
+            '<uninitialized>',
+            }
+    seen_enums = set()
+    with open(args.enum_file) as df:
+        skip_next = False
+        while True:
+            line = df.readline()
+            if not line:
+                break
+            if skip_next:
+                # This is the enum class path and class name
+                skip_next = False
+            else:
+                if line.startswith('===='):
+                    skip_next = True
                 else:
-                    print('WARNING: Dump file {} not found!'.format(dump_file))
-                    continue
+                    stripped = line.strip()
+                    lowered = stripped.lower()
+                    if stripped not in enum_ignore and lowered not in seen_enums:
+                        seen_enums.add(lowered)
+                        curs.execute('insert into enum (name) values (?)', (stripped,))
+        conn.commit()
 
-                data_files.append(dump_file)
-                data_files.append(dict_file)
+    # Get category registry
+    if args.verbose:
+        print('Category Registry:')
+        print(' - Generating')
+    cat_reg = get_category_registry(categories)
+    if args.verbose:
+        print(' - Populating in DB')
+    cat_reg.populate_db(conn, curs)
 
-                with open(os.path.join(input_dir, dict_file), 'w', newline="\r\n") as odf:
-                    line_num = 0
-                    for line in df:
-                        match = dump_start_re.match(line)
-                        if match:
-                            print('{} {}'.format(line_num, match.group(2)), file=odf)
-                            print(match.group(2), file=idx_odf)
-                        line_num += 1
-                df.close()
+    # Get class registry
+    if args.verbose:
+        print('Class Registry:')
+        print(' - Generating')
+    cr = get_class_registry(args.categorized_dir, cat_reg)
+    if args.verbose:
+        print(' - Populating in DB')
+    cr.populate_db(conn, curs)
+    if args.verbose:
+        print(' - Setting aggregate IDs')
+    cr.set_aggregate_ids()
+    if args.verbose:
+        print(' - Storing aggregate IDs')
+    cr.store_aggregate_ids(conn, curs)
+    if args.verbose:
+        print(' - Storing subclass map')
+    cr.store_subclasses(conn, curs)
+    if args.show_class_tree:
+        print('Generated class tree:')
+        cr.get_or_add('Object').display()
+        print('')
 
-        # Finally, create a zipfile!
-        zip_filename = os.path.join(output_dir, 'BLCMM_Data_{}_{}.jar'.format(game, cat_name))
-        with zipfile.ZipFile(zip_filename, 'w', compression=zipfile.ZIP_DEFLATED) as myzip:
+    # Populate objects
+    if args.verbose:
+        print('Object Registry:')
+        print(' - Generating')
+    inner_obj_dir = os.path.join('data', args.game_name.upper(), 'dumps')
+    full_obj_dir = os.path.join(args.output_dir, inner_obj_dir)
+    if not os.path.exists(full_obj_dir):
+        os.makedirs(full_obj_dir, exist_ok=True)
+    obj_reg = get_object_registry(full_obj_dir, args, cr, args.quick)
+    if args.verbose:
+        print(' - Populating in DB')
+    obj_reg.populate_db(args, conn, curs)
+    if args.verbose:
+        print(' - Setting shown class IDs')
+    obj_reg.set_show_class_ids()
+    if args.verbose:
+        print(' - Storing shown class IDs')
+    obj_reg.store_show_class_ids(conn, curs)
 
-            # Write a MANIFEST.MF
-            myzip.writestr('META-INF/MANIFEST.MF', "Manifest-Version: 1.0\r\n\r\n")
+    # Clean up class total_children counts
+    if args.verbose:
+        print('Other Updates:')
+        print(' - Cleaning up remaining Class information')
+    cr.fix_post_object_data(conn, curs)
 
-            # Add all our data files
-            for data_file in data_files:
-                data_file_full = os.path.join(input_dir, data_file)
-                if os.path.exists(data_file_full):
-                    myzip.write(os.path.join(input_dir, data_file), 'resources/data/{}/{}'.format(
-                        game,
-                        data_file,
-                        ))
-                elif os.path.exists('{}.xz'.format(data_file_full)):
-                    with lzma.open('{}.xz'.format(data_file_full)) as df:
-                        myzip.writestr('resources/data/{}/{}'.format(
-                            game,
-                            data_file,
-                            ),
-                            df.read(),
-                            )
-                else:
-                    raise Exception('Data file {} not found!'.format(data_file))
+    # Close the DB
+    curs.close()
+    conn.close()
 
-# And finally finally, create our Indices jar.
-print('Processing Indices...')
-zip_filename = os.path.join(output_dir, 'BLCMM_Data_{}_Indices.jar'.format(game))
-with zipfile.ZipFile(zip_filename, 'w', compression=zipfile.ZIP_DEFLATED) as myzip:
+    # Now zip it all up!
+    if args.verbose:
+        print('Packaging:')
+    filename_version = args.dump_version.replace('.', '-')
+    zip_filename_base = f'blcmm_data_{args.game_name.upper()}-{filename_version}.jar'
+    zip_filename_full = os.path.join(args.output_dir, zip_filename_base)
+    if os.path.exists(zip_filename_full):
+        if args.verbose:
+            print(f' - Cleaning old jarfile: {zip_filename_full}')
+        os.unlink(zip_filename_full)
+    if args.verbose:
+        print(f' - Compressing to: {zip_filename_full}')
+    with zipfile.ZipFile(zip_filename_full, 'w', compression=zipfile.ZIP_DEFLATED) as myzip:
 
-    # Write a MANIFEST.MF
-    myzip.writestr('META-INF/MANIFEST.MF', "Manifest-Version: 1.0\r\n\r\n")
+        # Write a MANIFEST.MF
+        myzip.writestr('META-INF/MANIFEST.MF', "Manifest-Version: 1.0\r\n\r\n")
 
-    # Add all our data files
-    for data_file in index_files:
-        myzip.write(os.path.join(input_dir, data_file), 'resources/data/{}/{}'.format(
-            game,
-            data_file,
-            ))
+        # Add in our dump version as a text file.  BLCMM/OE uses this to compare
+        # against the version found in the DB, to make sure that both match.
+        myzip.writestr(os.path.join('data', args.game_name.upper(), 'version.txt'),
+                f"{args.dump_version}\r\n");
 
-print('Done!')
+        # Add in our database
+        if args.verbose:
+            print(f"\r > {args.sqlite:70}", end='')
+        myzip.write(full_db_file, inner_db_file)
+
+        # Add in a checksum of our database
+        if args.verbose:
+            sqlite_report = f'{args.sqlite}.sha256sum'
+            print(f"\r > {sqlite_report:70}", end='')
+        h = hashlib.new('sha256')
+        with open(full_db_file, 'rb') as df:
+            h.update(df.read())
+        myzip.writestr(f'{inner_db_file}.sha256sum', h.hexdigest() + "\r\n")
+
+        # Add in all our datafiles
+        for filename in sorted(os.listdir(full_obj_dir)):
+            if args.verbose:
+                print(f"\r > {filename:70}", end='')
+            myzip.write(os.path.join(full_obj_dir, filename), os.path.join(inner_obj_dir, filename))
+
+        # Finish up
+        if args.verbose:
+            print("\r   {:70}".format('Done!'))
+
+    # Report on finish time
+    if args.verbose:
+        finish = time.time()
+        elapsed = finish - start
+        mins, secs = divmod(elapsed, 60)
+        print(f'Finished in {int(mins)}m{int(secs)}s!')
+
+if __name__ == '__main__':
+    main()
+
+

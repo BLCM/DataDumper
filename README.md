@@ -140,9 +140,13 @@ to not exist if you try to dump it in the same session.
     `GD_Lilac_Skills_Hellborn.Skills.Projectile_FireBall:BehaviorProviderDefinition_0.Behavior_AttemptStatusEffect_1`,
     saving it inside `Behavior_AttemptStatusEffect.dump` once you're out.
 11. Run `generate_blcmm_data.py` - this will generate OE-compatible files
-   inside the directory `generated_blcmm_data`
+   inside the directory `generated_blcmm_data`.  Note that the current version
+   of this script generates data for an ongoing 2023 refresh of BLCMM, not
+   the BLCMM version that's been in-use for awhile now.
 12. Run `compare_blcmm_data.py` to generate a list of how the new data
     files compare to your existing files, just to spot-check the data.
+   *(This is not currently applicable to the newer BLCMM data-generation
+   script!)*
 
 For BL2, steps 1 and 2 should take about two hours each, and generate about a 6GB
 logfile each.  Step 4 should take about 90 minutes, and generate another
@@ -260,9 +264,13 @@ ground level.
    the dumps in the `categorized` directory.  See below for known locations
    of personal information (steam username/userid, hostname, etc).
 8. Run `generate_blcmm_data.py` - this will generate OE-compatible files
-   inside the directory `generated_blcmm_data`
+   inside the directory `generated_blcmm_data`.  Note that the current version
+   of this script generates data for an ongoing 2023 refresh of BLCMM, not
+   the BLCMM version that's been in-use for awhile now.
 9. Run `compare_blcmm_data.py` to generate a list of how the new data
    files compare to your existing files, just to spot-check the data.
+   *(This is not currently applicable to the newer BLCMM data-generation
+   script!)*
 
 ### No-pruning variant
 
@@ -528,18 +536,23 @@ directory.  It expects to be run in the same directory that `categorize_data.py`
 was run, so it's got that `categorized` directory to work with.  It will
 output the Jars into `generated_blcmm_data`.
 
-After the data's been generated, you can also run `compare_blcmm_data.py` to
-compare our own data collection versus BLCMM's original data, just to spot-check
-the data in case anything obvious was missing.  Like other utilities, you'll
-have to change a file path or two in the code itself.  This expects to have
-the `categorized` folder still available, and the `generate_blcmm_data.py`
-script already run.  My first runthrough of this process generated the following:
-https://drive.google.com/open?id=1vLBRgs-UkYfOmStP6D3KjjcYbOvMunvX
+The current version of that script is set up to generate data for an ongoing
+revamp of BLCMM in 2023, *not* the version of BLCMM that folks have been using
+for awhile now.  The rest of the previous info from this section doesn't
+really apply anymore:
 
-If you want `generate_blcmm_data.py` to also generate a `BLCMM_Data_BL2_Others.jar`
-datafile, which contains all classes dumped by the process which aren't already
-inside an existing BLCMM OE datafile, specify `-o` or `--others` when running
-the script.
+    After the data's been generated, you can also run `compare_blcmm_data.py` to
+    compare our own data collection versus BLCMM's original data, just to spot-check
+    the data in case anything obvious was missing.  Like other utilities, you'll
+    have to change a file path or two in the code itself.  This expects to have
+    the `categorized` folder still available, and the `generate_blcmm_data.py`
+    script already run.  My first runthrough of this process generated the following:
+    https://drive.google.com/open?id=1vLBRgs-UkYfOmStP6D3KjjcYbOvMunvX
+
+    If you want `generate_blcmm_data.py` to also generate a `BLCMM_Data_BL2_Others.jar`
+    datafile, which contains all classes dumped by the process which aren't already
+    inside an existing BLCMM OE datafile, specify `-o` or `--others` when running
+    the script.
 
 FT/BLCMM Explorer Integration
 -----------------------------
