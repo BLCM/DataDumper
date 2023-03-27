@@ -4,9 +4,13 @@
 import os
 import re
 import sys
+import time
 import lzma
 import sqlite3
+import zipfile
+import hashlib
 import argparse
+import datetime
 
 # NOTE: this is still a work-in-progress, and the BLCMM version which
 # uses this data hasn't been released yet (and will probably have a
@@ -2543,11 +2547,11 @@ class ObjectRegistry:
         """
         for obj in sorted(self.get_top_levels()):
             if args.verbose:
-                print(f"\r > {obj.name:60}", end='')
+                print(f"\r > {obj.name:70}", end='')
             obj.populate_db(conn, curs)
             conn.commit()
         if args.verbose:
-            print("\r   {:50}".format('Done!'))
+            print("\r   {:70}".format('Done!'))
 
     def set_show_class_ids(self):
         """
@@ -2601,7 +2605,7 @@ def get_class_registry(categorized_dir, cat_reg):
     return cr
 
 
-def get_object_registry(args, cr):
+def get_object_registry(dest_dir, args, cr, quick):
     """
     Creates our object registry
     """
@@ -2630,9 +2634,9 @@ def get_object_registry(args, cr):
                             odf.close()
                             cur_index += 1
                         if args.verbose:
-                            print("\r > {:60}".format(
-                                f'{class_obj.name}.{cur_index}'), end='')
-                        odf = open(os.path.join(args.obj_dir, f'{class_obj.name}.dump.{cur_index}'), 'wt', encoding='latin1')
+                            print("\r > {:70}".format(
+                                f'{class_obj.name}.dump.{cur_index}'), end='')
+                        odf = open(os.path.join(dest_dir, f'{class_obj.name}.dump.{cur_index}'), 'wt', encoding='latin1')
                         pos = 0
                         class_obj.num_datafiles += 1
                 elif line.startswith('=== '):
@@ -2660,15 +2664,17 @@ def get_object_registry(args, cr):
                 new_obj.bytes = odf.tell()-new_obj.file_position
             odf.close()
         # Break here to only process the first of the dump files
-        #break
+        if args.quick:
+            break
     if args.verbose:
-        print("\r   {:60}".format('Done!'))
+        print("\r   {:70}".format('Done!'))
     return obj_reg
 
 
 def write_schema(conn, curs):
     """
     Given a database object `conn` and cursor `curs`, initialize our schema.
+    Returns the database version number to put into the metadata table.
 
     Show all top-level object entries which should be shown for class ID 1683:
         select o.* from object o, object_show_class_ids i where o.id=i.id and i.class=1683 and parent is null;
@@ -2677,6 +2683,16 @@ def write_schema(conn, curs):
         select o.* from object o, object_show_class_ids i where o.id=i.id and i.class=1683 and parent=604797;
     """
 
+    db_vers = 1
+
+    # Metadata
+    curs.execute("""
+        create table metadata (
+            db_version int not null,
+            dump_version text not null,
+            compiled datetime not null
+        )
+        """)
     # Class categories
     curs.execute("""
         create table category (
@@ -2784,6 +2800,8 @@ def write_schema(conn, curs):
     curs.execute('create index idx_attr_name on attr_name(name collate nocase)')
     conn.commit()
 
+    return db_vers
+
 def main():
 
     parser = argparse.ArgumentParser(
@@ -2797,16 +2815,29 @@ def main():
             help="SQLite database file to write to (wiping if needed, first)",
             )
 
+    parser.add_argument('-d', '--dump-version',
+            type=str,
+            default='2023.03.26.01',
+            help="Dump Version Number",
+            )
+
+    parser.add_argument('-g', '--game-name',
+            type=str,
+            required=True,
+            choices=['bl2', 'tps'],
+            help="The game we're generating data for",
+            )
+
     parser.add_argument('-c', '--categorized-dir',
             type=str,
             default='categorized',
             help="Directory containing categorized .dump.xz output",
             )
 
-    parser.add_argument('-o', '--obj-dir',
+    parser.add_argument('-o', '--output-dir',
             type=str,
             default='generated_2023_blcmm_data',
-            help="Output directory for data dumps",
+            help="Output directory",
             )
 
     parser.add_argument('-m', '--max-dump-size',
@@ -2821,10 +2852,22 @@ def main():
             help='Location of Enum datafile, to help populate an autocomplete table',
             )
 
-    parser.add_argument('-v', '--verbose',
+    parser.add_argument('-q', '--quick',
             action='store_true',
-            help="Verbose output while running.  (Does NOT imply the various --show-* options)",
+            help='''
+                "Quick" processing which only processes the very first classs found
+                in the data.  Used for testing out the generation process without
+                having to wait for the entire dataset.
+                ''',
             )
+
+    # Eh, not gonna bother even providing this option; honestly not sure under
+    # what circumstances you *wouldn't* want this output.
+    if False:
+        parser.add_argument('-v', '--verbose',
+                action='store_true',
+                help="Verbose output while running.  (Does NOT imply the various --show-* options)",
+                )
 
     parser.add_argument('--show-class-tree',
             action='store_true',
@@ -2833,6 +2876,7 @@ def main():
 
     # Parse args
     args = parser.parse_args()
+    args.verbose = True
 
     # Doublecheck to make sure we can read our Enum datafile
     if not os.path.exists(args.enum_file):
@@ -2842,22 +2886,38 @@ def main():
         print('')
         sys.exit(1)
 
+    # Keep track of when we started
+    start = time.time()
+
     # Wipe + recreate our sqlite DB if necessary
     if args.verbose:
         print('Database:')
-    if os.path.exists(args.sqlite):
+    inner_db_dir = os.path.join('data', args.game_name.upper())
+    full_db_dir = os.path.join(args.output_dir, inner_db_dir)
+    if not os.path.exists(full_db_dir):
+        os.makedirs(full_db_dir, exist_ok=True)
+    inner_db_file = os.path.join(inner_db_dir, args.sqlite)
+    full_db_file = os.path.join(full_db_dir, args.sqlite)
+    if os.path.exists(full_db_file):
         if args.verbose:
-            print(f' - Cleaning old DB: {args.sqlite}')
-        os.unlink(args.sqlite)
+            print(f' - Cleaning old DB: {full_db_file}')
+        os.unlink(full_db_file)
     if args.verbose:
-        print(f' - Creating new DB: {args.sqlite}')
-    conn = sqlite3.connect(args.sqlite)
+        print(f' - Creating new DB: {full_db_file}')
+    conn = sqlite3.connect(full_db_file)
     curs = conn.cursor()
-    write_schema(conn, curs)
+    db_vers = write_schema(conn, curs)
+
+    # Write out metadata
+    if args.verbose:
+        print(' - Writing DB Metadata')
+    curs.execute('insert into metadata (db_version, dump_version, compiled) values (?, ?, ?)',
+            (db_vers, args.dump_version, datetime.datetime.now()))
+    conn.commit()
 
     # Write enum info
     if args.verbose:
-        print('Storing Enum Names')
+        print(' - Storing Enum Names')
     enum_ignore = {
             '<uninitialized>',
             }
@@ -2917,9 +2977,11 @@ def main():
     if args.verbose:
         print('Object Registry:')
         print(' - Generating')
-    if not os.path.exists(args.obj_dir):
-        os.makedirs(args.obj_dir, exist_ok=True)
-    obj_reg = get_object_registry(args, cr)
+    inner_obj_dir = os.path.join('data', args.game_name.upper(), 'dumps')
+    full_obj_dir = os.path.join(args.output_dir, inner_obj_dir)
+    if not os.path.exists(full_obj_dir):
+        os.makedirs(full_obj_dir, exist_ok=True)
+    obj_reg = get_object_registry(full_obj_dir, args, cr, args.quick)
     if args.verbose:
         print(' - Populating in DB')
     obj_reg.populate_db(args, conn, curs)
@@ -2939,6 +3001,59 @@ def main():
     # Close the DB
     curs.close()
     conn.close()
+
+    # Now zip it all up!
+    if args.verbose:
+        print('Packaging:')
+    filename_version = args.dump_version.replace('.', '-')
+    zip_filename_base = f'blcmm_data_{args.game_name.upper()}-{filename_version}.jar'
+    zip_filename_full = os.path.join(args.output_dir, zip_filename_base)
+    if os.path.exists(zip_filename_full):
+        if args.verbose:
+            print(f' - Cleaning old jarfile: {zip_filename_full}')
+        os.unlink(zip_filename_full)
+    if args.verbose:
+        print(f' - Compressing to: {zip_filename_full}')
+    with zipfile.ZipFile(zip_filename_full, 'w', compression=zipfile.ZIP_DEFLATED) as myzip:
+
+        # Write a MANIFEST.MF
+        myzip.writestr('META-INF/MANIFEST.MF', "Manifest-Version: 1.0\r\n\r\n")
+
+        # Add in our dump version as a text file.  BLCMM/OE uses this to compare
+        # against the version found in the DB, to make sure that both match.
+        myzip.writestr(os.path.join('data', args.game_name.upper(), 'version.txt'),
+                f"{args.dump_version}\r\n");
+
+        # Add in our database
+        if args.verbose:
+            print(f"\r > {args.sqlite:70}", end='')
+        myzip.write(full_db_file, inner_db_file)
+
+        # Add in a checksum of our database
+        if args.verbose:
+            sqlite_report = f'{args.sqlite}.sha256sum'
+            print(f"\r > {sqlite_report:70}", end='')
+        h = hashlib.new('sha256')
+        with open(full_db_file, 'rb') as df:
+            h.update(df.read())
+        myzip.writestr(f'{inner_db_file}.sha256sum', h.hexdigest() + "\r\n")
+
+        # Add in all our datafiles
+        for filename in sorted(os.listdir(full_obj_dir)):
+            if args.verbose:
+                print(f"\r > {filename:70}", end='')
+            myzip.write(os.path.join(full_obj_dir, filename), os.path.join(inner_obj_dir, filename))
+
+        # Finish up
+        if args.verbose:
+            print("\r   {:70}".format('Done!'))
+
+    # Report on finish time
+    if args.verbose:
+        finish = time.time()
+        elapsed = finish - start
+        mins, secs = divmod(elapsed, 60)
+        print(f'Finished in {int(mins)}m{int(secs)}s!')
 
 if __name__ == '__main__':
     main()
