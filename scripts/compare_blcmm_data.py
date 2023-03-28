@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 # vim: set expandtab tabstop=4 shiftwidth=4:
 
-# Copyright 2019 Christopher J. Kucera
+# Copyright 2019-2023 Christopher J. Kucera
 # <cj@apocalyptech.com>
-# <http://apocalyptech.com/contact.php>
+# <https://apocalyptech.com/contact.php>
 #
 # This program is free software: you can redistribute it
 # and/or modify it under the terms of the GNU General Public License
@@ -32,18 +32,20 @@ parser.add_argument('-d', '--ignoredefault',
         action='store_true',
         help='Ignore Default__* objects',
         )
+parser.add_argument('-g', '--game-name',
+        type=str,
+        required=True,
+        choices=['bl2', 'tps'],
+        help="The game we'll compare against",
+        )
 args = parser.parse_args()
 
 output_dir = 'comparisons'
 data_dir = 'categorized'
-# Detect game
-game = 'BL2'
-for filename in os.listdir(data_dir):
-    if filename.startswith('Oz'):
-        game = 'TPS'
-        break
-#stock_files_dir = '/home/pez/.local/share/BLCMM/data/{}/bak'.format(game)
-stock_files_dir = '/home/pez/git/b2patching/blcmm/BLCMM/data/{}'.format(game)
+game = args.game_name.upper()
+# Ah, actually this check was already just going after `categorized`; no need to bother with sqlite
+#new_db_file = f'generated_blcmm_data/data/{game}/data.db'
+stock_files_dir = f'/home/pez/.local/share/BLCMM/data/{game}'
 
 if not os.path.isdir(output_dir):
     os.mkdir(output_dir)

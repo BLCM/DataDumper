@@ -1,6 +1,23 @@
 #!/usr/bin/env python3
 # vim: set expandtab tabstop=4 shiftwidth=4:
 
+# Copyright 2023 Christopher J. Kucera
+# <cj@apocalyptech.com>
+# <https://apocalyptech.com/contact.php>
+#
+# This program is free software: you can redistribute it
+# and/or modify it under the terms of the GNU General Public License
+# as published by the Free Software Foundation, either version 3 of
+# the License, or (at your option) any later version.
+#
+# Borderlands ModCabinet Sorter is distributed in the hope that it will
+# be useful, but WITHOUT ANY WARRANTY; without even the implied
+# warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+# See the GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
 import os
 import re
 import sys
@@ -12,14 +29,15 @@ import hashlib
 import argparse
 import datetime
 
-# NOTE: this is still a work-in-progress, and the BLCMM version which
-# uses this data hasn't been released yet (and will probably have a
-# slightly new name for the fork, when it is released)
+# NOTE: this is still a work-in-progress which generates data for OpenBLCMM,
+# a forthcoming opensource version of BLCMM which has not yet been officially
+# released.  The fork lives at https://github.com/BLCM/blcmm -- at time of
+# writing, just in the `apoc` fork.
 
 # When the BLCMM core was opensourced in 2022, we needed to reimplement the
 # Data Library components if we wanted a fully-opensource BLCMM, since those
 # parts were reserved.  This is the code to generate the required data
-# structures for this new 2023 BLCMM fork!
+# structures for this new OpenBLCMM fork!
 #
 # The original BLCMM data library has a pretty thorough understanding of UE
 # objects, including their attributes, and had a complete object model for
@@ -46,7 +64,7 @@ import datetime
 #
 # While processing, in addition to creating the sqlite database, this'll
 # copy/store the dumps into a new directory with a different format.  For the
-# new BLCMM OE dumps, it'll still be categorized by class type, but there's also
+# new OpenBLCMM dumps, it'll still be categorized by class type, but there's also
 # a maximum individual file size.  That's done so that random access to object
 # dumps near the end of the file don't take a noticeable amount of time to load,
 # since those dumps will be compressed, and need to be uncompressed to seek to
@@ -73,9 +91,9 @@ import datetime
 # below for details on that - it's what lets the lower-left-hand Object Explorer
 # window be nice and quick) adds in another 230MB or so.
 #
-# ================================================================
-# NOTE: ASSUMPTIONS ABOUT THE DATABASE WHICH BLCMM'S OE RELIES ON:
-# ================================================================
+# ====================================================================
+# NOTE: ASSUMPTIONS ABOUT THE DATABASE WHICH OPENBLCMM'S OE RELIES ON:
+# ====================================================================
 #
 #   1. The `class.id` numbering starts at 1 for the first valid object (ResultSet
 #      objects will end up with `0` for integer values when they're null -- you
@@ -83,7 +101,7 @@ import datetime
 #      autoincrement PKs are already 1-indexed, we're not bothering).
 #
 #   2. There is a single root `class` element, which is `id` 1 (and is the first
-#      row in the database.  (This happens to be named `Object`, but BLCMM
+#      row in the database.  (This happens to be named `Object`, but OpenBLCMM
 #      doesn't actually care about that.)
 #
 #   3. When ordered by `id`, the `class` table rows are in "tree" order -- as in,
@@ -91,13 +109,15 @@ import datetime
 #
 #   4. Datafile filename indexes start at 1, for the same reason as point #1 above.
 #
-#   5. BLCMM OE expects the `categories` keys to be those exact names in the
+#   5. OpenBLCMM OE expects the `categories` keys to be those exact names in the
 #      database, including the code-added `Others` category.  It'll refuse
 #      to load the data if they aren't all found.  New categories in here
-#      will also require a BLCMM update.
+#      will also require an OpenBLCMM update.
 #
-#   6. BLCMM relies on the text indexes in the DB being case-insensitive
+#   6. OpenBLCMM relies on the text indexes in the DB being case-insensitive
 #      (at least for `object.name` -- the others may not be as important)
+#
+# (It could be that there's other things which I've forgotten to enumerate here, too)
 
 # Categories for user to choose for fulltext search.  This list is kind of a
 # conglomeration of both BL2 and TPS classtypes, but it won't result in any
@@ -2450,7 +2470,7 @@ class UEObject:
         200MB.
 
         The has_class_children field is used to assist with the tree rendering
-        in BLCMM -- a simple boolean so that the tree-building routines know
+        in OpenBLCMM -- a simple boolean so that the tree-building routines know
         right away whether a UEObject is a leaf or not, so it can skip adding
         a "dummy" entry where one isn't needed.
         """
@@ -2805,7 +2825,7 @@ def write_schema(conn, curs):
 def main():
 
     parser = argparse.ArgumentParser(
-            description="Populate new-style BLCMM data dumps (for 2023)",
+            description="Populate OpenBLCMM data dumps",
             formatter_class=argparse.ArgumentDefaultsHelpFormatter,
             )
 
