@@ -2633,6 +2633,7 @@ def get_object_registry(dest_dir, args, cr, quick):
     max_bytes = args.max_dump_size*1024*1024
 
     obj_reg = ObjectRegistry()
+    seen_array_limit_warning = False
     for filename in sorted(os.listdir(args.categorized_dir)):
         if not filename.endswith('.dump.xz'):
             continue
@@ -2644,6 +2645,7 @@ def get_object_registry(dest_dir, args, cr, quick):
             new_obj = None
             inner_class = None
             for line in df:
+                to_write = line.lstrip()
                 if line.startswith('*** Property dump for object'):
                     if new_obj is not None:
                         new_obj.bytes = pos-new_obj.file_position
@@ -2673,12 +2675,22 @@ def get_object_registry(dest_dir, args, cr, quick):
                     # If dumps have been taken without the array limit fix in place, they may
                     # have lines like `  ... 1 more elements`.  This prevents us from trying
                     # to read those.
-                    if not line.startswith('  ...'):
+                    if line.startswith('  ...'):
+                        if not seen_array_limit_warning:
+                            print("\r ! {:70}".format('WARNING: Dumps were not generated with array-limit hexedit!'))
+                            seen_array_limit_warning = True
+                    else:
                         attr_name = line[2:line.index('=')]
                         if '(' in attr_name:
                             attr_name = attr_name[:attr_name.index('(')]
                     inner_class.add_attr(attr_name)
-                odf.write(line.lstrip())
+                elif to_write == '':
+                    # If we're a blank line, make sure to write it out (this isn't actually
+                    # important programmatically -- BLCMM/OE doesn't care if there's a newline
+                    # at the end.  I like having them there when I look at the dumps manually
+                    # to confirm stuff, though)
+                    to_write = line
+                odf.write(to_write)
                 pos = odf.tell()
             if new_obj is not None:
                 new_obj.bytes = odf.tell()-new_obj.file_position
@@ -2837,7 +2849,7 @@ def main():
 
     parser.add_argument('-d', '--dump-version',
             type=str,
-            default='2023.03.26.01',
+            default='2023.04.03.01',
             help="Dump Version Number",
             )
 
