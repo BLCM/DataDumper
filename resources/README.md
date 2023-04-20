@@ -4,7 +4,7 @@ mods.  The best way to pull this out of the engine is using the [Enum
 PythonSDK library](https://bl-sdk.github.io/mods/Enums/).
 
 At time of writing, though, that library (v1.1, or maybe it's the current
-version of PythonSDK that's the problem (v0.7.11) doesn't fully handle
+version of PythonSDK that's the problem (v0.7.11)) doesn't fully handle
 Enum values which have numeric suffixes.  For instance, for the
 `EPacketSizeMultiplier` enum, you'd end up with a bunch of consecutive
 `EPSM` values, which should really be `EPSM_4`, `EPSM_8`, etc.

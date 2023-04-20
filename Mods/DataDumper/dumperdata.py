@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 # vim: set expandtab tabstop=4 shiftwidth=4:
 
-# Copyright 2019 Christopher J. Kucera
+# Copyright 2019-2023 Christopher J. Kucera
 # <cj@apocalyptech.com>
-# <http://apocalyptech.com/contact.php>
+# <https://apocalyptech.com/contact.php>
 #
 # This program is free software: you can redistribute it
 # and/or modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation, either version 3 of
 # the License, or (at your option) any later version.
 #
-# Borderlands ModCabinet Sorter is distributed in the hope that it will
+# Borderlands DataDumper is distributed in the hope that it will
 # be useful, but WITHOUT ANY WARRANTY; without even the implied
 # warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
@@ -20,143 +20,160 @@
 
 from Mods.ModMenu.ModObjects import Game
 
+# These used to be alphabetical by "real" map name (though still grouped
+# by DLC); that was less useful than having them alphabetical by "code"
+# though.  I did still keep the DLC-grouping, though.
 level_list = {
         Game.BL2: [
-            'Stockade_P',
-            'Fyrestone_P',
-            'DamTop_P',
-            'Dam_P',
-            'Boss_Cliffs_P',
-            'Caverns_P',
-            'VOGChamber_P',
-            'Interlude_P',
-            'TundraTrain_P',
+            # Base game
             'Ash_P',
             'BanditSlaughter_P',
-            'Fridge_P',
-            'HypInterlude_P',
-            'IceCanyon_P',
-            'FinalBossAscent_P',
-            'Outwash_P',
-            'Grass_P',
-            'Luckys_P',
-            'Grass_Lynchwood_P',
-            'CreatureSlaughter_P',
-            'HyperionCity_P',
-            'RobotSlaughter_P',
-            'SanctuaryAir_P',
-            'Sanctuary_P',
-            'Sanctuary_Hole_P',
-            'CraterLake_P',
+            'Boss_Cliffs_P',
+            'Boss_Volcano_P',
+            'Caverns_P',
             'Cove_P',
+            'CraterLake_P',
+            'CreatureSlaughter_P',
+            'Dam_P',
+            'DamTop_P',
+            'FinalBossAscent_P',
+            'Fridge_P',
+            'Frost_P',
+            'Fyrestone_P',
+            'Glacial_P',
+            'Grass_Cliffs_P',
+            'Grass_Lynchwood_P',
+            'Grass_P',
+            'HyperionCity_P',
+            'HypInterlude_P',
+            'Ice_P',
+            'IceCanyon_P',
+            'Interlude_P',
+            'Luckys_P',
+            'Outwash_P',
+            'PandoraPark_P',
+            'RobotSlaughter_P',
+            'Sanctuary_Hole_P',
+            'Sanctuary_P',
+            'SanctuaryAir_P',
             'SouthernShelf_P',
             'SouthpawFactory_P',
+            'Stockade_P',
             'ThresherRaid_P',
-            'Grass_Cliffs_P',
-            'Ice_P',
-            'Frost_P',
             'TundraExpress_P',
-            'Boss_Volcano_P',
-            'PandoraPark_P',
-            'Glacial_P',
+            'TundraTrain_P',
+            'VOGChamber_P',
+            # DLC1
             'Orchid_Caves_P',
-            'Orchid_WormBelly_P',
-            'Orchid_Spire_P',
             'Orchid_OasisTown_P',
-            'Orchid_ShipGraveyard_P',
             'Orchid_Refinery_P',
             'Orchid_SaltFlats_P',
-            'Iris_DL1_TAS_P',
+            'Orchid_ShipGraveyard_P',
+            'Orchid_Spire_P',
+            'Orchid_WormBelly_P',
+            # DLC2
             'Iris_DL1_P',
-            'Iris_Moxxi_P',
-            'Iris_Hub_P',
+            'Iris_DL1_TAS_P',
+            'Iris_DL2_Interior_P',
             'Iris_DL2_P',
             'Iris_DL3_P',
-            'Iris_DL2_Interior_P',
             'Iris_Hub2_P',
-            'Sage_PowerStation_P',
+            'Iris_Hub_P',
+            'Iris_Moxxi_P',
+            # DLC3
             'Sage_Cliffs_P',
             'Sage_HyperionShip_P',
-            'Sage_Underground_P',
+            'Sage_PowerStation_P',
             'Sage_RockForest_P',
-            'Dark_Forest_P',
-            'CastleKeep_P',
-            'Village_P',
+            'Sage_Underground_P',
+            # DLC4
             'CastleExterior_P',
+            'CastleKeep_P',
+            'Dark_Forest_P',
             'Dead_Forest_P',
+            'Docks_P',
             'Dungeon_P',
+            'DungeonRaid_P',
             'Mines_P',
             'TempleSlaughter_P',
-            'Docks_P',
-            'DungeonRaid_P',
+            'Village_P',
+            # DLC5
             'Backburner_P',
-            'Sandworm_P',
-            'OldDust_P',
-            'Helios_P',
-            'SanctIntro_P',
-            'ResearchCenter_P',
             'GaiusSanctuary_P',
+            'Helios_P',
+            'OldDust_P',
+            'ResearchCenter_P',
+            'SanctIntro_P',
+            'Sandworm_P',
             'SandwormLair_P',
+            # Headhunters
+            'Distillery_P',
+            'Easter_P',
             'Hunger_P',
             'Pumpkin_Patch_P',
             'Xmas_P',
+            # Digistruct Peak
             'TestingZone_P',
-            'Distillery_P',
-            'Easter_P',
             ],
         Game.AoDK: [
-            'Dark_Forest_P',
-            'CastleKeep_P',
-            'Village_P',
             'CastleExterior_P',
+            'CastleKeep_P',
+            'Dark_Forest_P',
             'Dead_Forest_P',
+            'Docks_P',
             'Dungeon_P',
+            'DungeonRaid_P',
             'Mines_P',
             'TempleSlaughter_P',
-            'Docks_P',
-            'DungeonRaid_P',
+            'Village_P',
             ],
         Game.TPS: [
-            'MoonSlaughter_P',
-            'Spaceport_P',
-            'ComFacility_P',
-            'InnerCore_P',
-            'LaserBoss_P',
-            'MoonShotIntro_P',
-            'Eridian_Slaughter_P',
+            # Base game
+            'Access_P',
             'CentralTerminal_P',
+            'ComFacility_P',
+            'DahlFactory_Boss',
+            'DahlFactory_P',
+            'Deadsurface_P',
+            'Digsite_P',
+            'Digsite_Rk5arena_P',
+            'Eridian_Slaughter_P',
+            'InnerCore_P',
+            'InnerHull_P',
             'JacksOffice_P',
             'Laser_P',
+            'LaserBoss_P',
             'Meriff_P',
-            'Digsite_Rk5arena_P',
-            'Outlands_P2',
-            'Outlands_P',
-            'Wreck_P',
-            'Deadsurface_P',
-            'RandDFacility_P',
+            'Moon_P',
+            'MoonShotIntro_P',
+            'MoonSlaughter_P',
             'Moonsurface_P',
+            'Outlands_P',
+            'Outlands_P2',
+            'RandDFacility_P',
+            'Spaceport_P',
             'StantonsLiver_P',
             'Sublevel13_P',
-            'DahlFactory_P',
-            'DahlFactory_Boss',
-            'Moon_P',
-            'Access_P',
-            'InnerHull_P',
-            'Digsite_P',
-            'Ma_LeftCluster_P',
-            'Ma_RightCluster_P',
-            'Ma_SubBoss_P',
+            'Wreck_P',
+            # Claptastic Voyage
             'Ma_Deck13_P',
             'Ma_FinalBoss_P',
+            'Ma_LeftCluster_P',
             'Ma_Motherboard_P',
             'Ma_Nexus_P',
+            'Ma_RightCluster_P',
+            'Ma_SubBoss_P',
             'Ma_Subconscious_P',
             ],
     }
 
 # Ideally we should probably use API calls to figure these out, but for
 # now I'd just used FT/BLCMM Explorer's data API to generate it.  Which
-# is a bit circular...
+# is a bit circular...  Note that this structure is only used by some
+# code which we don't actually use anymore -- there's two ways of opening
+# a new map: a simple `open` and then a slightly more complex way, which
+# is what uses this.  In the end, using `open` seems to be the slightly
+# more reliable.  Still, keeping it in here just in case!
 level_pkgs = {
         Game.BL2: {
             'Sage_PowerStation_P': [
@@ -1388,6 +1405,8 @@ level_pkgs = {
             },
     }
 
+# This is used if you use the "with char+vehicle" method of dumping, which
+# I have not used for awhile now.  Still, keeping it in here regardless.
 char_vehicle_packages = {
         Game.BL2: [
             'GD_Assassin_Streaming_SF',

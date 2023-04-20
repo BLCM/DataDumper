@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 # vim: set expandtab tabstop=4 shiftwidth=4:
 
-# Copyright 2019 Christopher J. Kucera
+# Copyright 2019-2023 Christopher J. Kucera
 # <cj@apocalyptech.com>
-# <http://apocalyptech.com/contact.php>
+# <https://apocalyptech.com/contact.php>
 #
 # This program is free software: you can redistribute it
 # and/or modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation, either version 3 of
 # the License, or (at your option) any later version.
 #
-# Borderlands ModCabinet Sorter is distributed in the hope that it will
+# Borderlands DataDumper is distributed in the hope that it will
 # be useful, but WITHOUT ANY WARRANTY; without even the implied
 # warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
@@ -27,9 +27,9 @@ import tempfile
 filename_fwd = 'Launch.log-all_object_names_fwd'
 filename_rev = 'Launch.log-all_object_names_rev'
 output_dirs = {
-        'BL2': '/usr/local/games/Steam/SteamApps/common/Borderlands 2/Binaries/datadumper',
-        'AoDK': '/usr/local/winex/egs/drive_c/Program Files/Epic Games/TTAoDKOneShotAdventure/Binaries/datadumper',
-        'TPS': '/usr/local/games/Steam/SteamApps/common/BorderlandsPreSequel/Binaries/datadumper',
+        'BL2': '/games/Steam/steamapps/common/Borderlands 2/Binaries/datadumper',
+        'AoDK': '/games/Steam/steamapps/common/Pawpaw/Binaries/datadumper',
+        'TPS': '/games/Steam/steamapps/common/BorderlandsPreSequel/Binaries/datadumper',
         }
 game = None
 with open(filename_fwd) as df:
@@ -59,7 +59,7 @@ with open(filename_fwd) as df:
             elif 'BorderlandsPreSequel' in line:
                 game = 'TPS'
                 break
-            elif 'TTAoDKOneShotAdventure' in line:
+            elif 'TTAoDKOneShotAdventure' in line or 'Pawpaw' in line:
                 game = 'AoDK'
                 break
             else:
@@ -80,9 +80,12 @@ print('Found {}, writing to {}'.format(game, output_dir))
 # happened to get dumped in Caustic Caverns.  When I was doing some more
 # ad-hoc data dumping on the Linux TPS version, I was dumping 10k objects
 # at once; c0dy suggested that the inherent output limits are higher in
-# TPS in general.  I wonder if there's something about the Linux versions,
-# too...  Anyway, it's 800 for now.
-max_per_file = 800
+# TPS in general.  Still, we'll use a low limit for everything.  In 2023,
+# after tweaking the dumping process a bit, Caustic Caverns once again
+# became problematic, even with 800 objects at once, so this was lowered
+# even further to 600.  Alas!
+#max_per_file = 800
+max_per_file = 600
 
 obj_re = re.compile('^\[[0-9\.]+\] Log: \d+\) (\w+) (\S+)\.Name = .*$')
 switch_re = re.compile('.*switch\.to\.(\w+)\'.*')
@@ -210,4 +213,7 @@ if cur_level:
 # Clean up
 rev_objs.clean()
 
-print('Done!')
+print('')
+print(f'Done!  Control files written to: {output_dir}')
+print('')
+

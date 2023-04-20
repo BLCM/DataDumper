@@ -1,16 +1,16 @@
 #!/usr/bin/env python
 # vim: set expandtab tabstop=4 shiftwidth=4:
 
-# Copyright 2019 Christopher J. Kucera
+# Copyright 2019-2023 Christopher J. Kucera
 # <cj@apocalyptech.com>
-# <http://apocalyptech.com/contact.php>
+# <https://apocalyptech.com/contact.php>
 #
 # This program is free software: you can redistribute it
 # and/or modify it under the terms of the GNU General Public License
 # as published by the Free Software Foundation, either version 3 of
 # the License, or (at your option) any later version.
 #
-# Borderlands ModCabinet Sorter is distributed in the hope that it will
+# Borderlands DataDumper is distributed in the hope that it will
 # be useful, but WITHOUT ANY WARRANTY; without even the implied
 # warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
@@ -108,6 +108,7 @@ class DataDumper(SDKMod):
             MODE_DUMP_ZERO,
             MODE_DUMP_KRIEG,
             MODE_RANDOM_MAPS,
+            MODE_MAKEUP,
             # Extra TPS modes
             MODE_CLAPTRAP_BUGGY,
             MODE_WILHELM_STINGRAY_FLAK,
@@ -126,14 +127,14 @@ class DataDumper(SDKMod):
             MODE_DUMP_AXTON,
             MODE_DUMP_MAYA,
             MODE_DUMP_GAIGE,
-            ) = range(39)
+            ) = range(40)
 
     MODELIST = []
     MODES = {
             Game.BL2: [
-                MODE_FWD,
+                #MODE_FWD,
                 MODE_FWD_WITHOUT_CHAR,
-                MODE_REV,
+                #MODE_REV,
                 MODE_REV_WITHOUT_CHAR,
                 MODE_AXTON_SKIFF1,
                 MODE_AXTON_SKIFF2,
@@ -143,7 +144,7 @@ class DataDumper(SDKMod):
                 MODE_GAIGE_RUNNER,
                 MODE_ZERO,
                 MODE_KRIEG,
-                MODE_DUMP,
+                #MODE_DUMP,
                 MODE_DUMP_WITHOUT_CHAR,
                 MODE_DUMP_AXTON_SKIFF1,
                 MODE_DUMP_AXTON_SKIFF2,
@@ -153,44 +154,47 @@ class DataDumper(SDKMod):
                 MODE_DUMP_GAIGE_RUNNER,
                 MODE_DUMP_ZERO,
                 MODE_DUMP_KRIEG,
+                MODE_MAKEUP,
                 MODE_RANDOM_MAPS,
                 ],
             Game.AoDK: [
-                MODE_FWD,
+                #MODE_FWD,
                 MODE_FWD_WITHOUT_CHAR,
-                MODE_REV,
+                #MODE_REV,
                 MODE_REV_WITHOUT_CHAR,
                 MODE_AXTON,
                 MODE_MAYA,
                 MODE_GAIGE,
                 MODE_ZERO,
                 MODE_KRIEG,
-                MODE_DUMP,
+                #MODE_DUMP,
                 MODE_DUMP_WITHOUT_CHAR,
                 MODE_DUMP_AXTON,
                 MODE_DUMP_MAYA,
                 MODE_DUMP_GAIGE,
                 MODE_DUMP_ZERO,
                 MODE_DUMP_KRIEG,
+                MODE_MAKEUP,
                 MODE_RANDOM_MAPS,
                 ],
             Game.TPS: [
-                MODE_FWD,
+                #MODE_FWD,
                 MODE_FWD_WITHOUT_CHAR,
-                MODE_REV,
+                #MODE_REV,
                 MODE_REV_WITHOUT_CHAR,
                 MODE_CLAPTRAP_BUGGY,
                 MODE_WILHELM_STINGRAY_FLAK,
                 MODE_JACK_STINGRAY_CRYO,
                 MODE_ATHENA,
                 MODE_AURELIA,
-                MODE_DUMP,
+                #MODE_DUMP,
                 MODE_DUMP_WITHOUT_CHAR,
                 MODE_DUMP_CLAPTRAP_BUGGY,
                 MODE_DUMP_WILHELM_STINGRAY_FLAK,
                 MODE_DUMP_JACK_STINGRAY_CRYO,
                 MODE_DUMP_ATHENA,
                 MODE_DUMP_AURELIA,
+                MODE_MAKEUP,
                 MODE_RANDOM_MAPS,
                 ],
             }
@@ -199,28 +203,29 @@ class DataDumper(SDKMod):
             TYPE_DUMP) = range(2)
 
     MODE_ENG = {
-            MODE_FWD: ('Maps Forward (with char+vehicle)', None, TYPE_GETALL),
-            MODE_FWD_WITHOUT_CHAR: ('Maps Forward (without char+vehicle)', None, TYPE_GETALL),
-            MODE_REV: ('Maps Reverse (with char+vehicle)', None, TYPE_GETALL),
-            MODE_REV_WITHOUT_CHAR: ('Maps Reverse (without char+vehicle)', None, TYPE_GETALL),
-            MODE_AXTON_SKIFF1: ('Axton + Skiff 1 Getall', 'axton1', TYPE_GETALL),
-            MODE_AXTON_SKIFF2: ('Axton + Skiff 2 Getall', 'axton2', TYPE_GETALL),
-            MODE_MAYA_FAN1: ('Maya + Fan 1 Getall', 'maya1', TYPE_GETALL),
-            MODE_MAYA_FAN2: ('Maya + Fan 2 Getall', 'maya2', TYPE_GETALL),
+            MODE_FWD: ('Maps Getall Forward (w/ char+vehicle)', None, TYPE_GETALL),
+            MODE_FWD_WITHOUT_CHAR: ('Maps Getall Forward', None, TYPE_GETALL),
+            MODE_REV: ('Maps Getall Reverse (w/ char+vehicle)', None, TYPE_GETALL),
+            MODE_REV_WITHOUT_CHAR: ('Maps Getall Reverse', None, TYPE_GETALL),
+            MODE_AXTON_SKIFF1: ('Axton + Rocket/Harpoon Skiff Getall', 'axton1', TYPE_GETALL),
+            MODE_AXTON_SKIFF2: ('Axton + Sawblade Skiff Getall', 'axton2', TYPE_GETALL),
+            MODE_MAYA_FAN1: ('Maya + Corrosive/Flame Fan Getall', 'maya1', TYPE_GETALL),
+            MODE_MAYA_FAN2: ('Maya + Shock Fan Getall', 'maya2', TYPE_GETALL),
             MODE_GAIGE_BTECH: ('Gaige + BTech Getall', 'gaige1', TYPE_GETALL),
             MODE_GAIGE_RUNNER: ('Gaige + Runner Getall', 'gaige2', TYPE_GETALL),
             MODE_ZERO: ('Zer0 Getall', 'zero', TYPE_GETALL),
             MODE_KRIEG: ('Krieg Getall', 'krieg', TYPE_GETALL),
-            MODE_DUMP: ('Dump Data (with char+vehicle)', None, TYPE_DUMP),
-            MODE_DUMP_WITHOUT_CHAR: ('Dump Data (without char+vehicle)', None, TYPE_DUMP),
-            MODE_DUMP_AXTON_SKIFF1: ('Axton + Skiff 1 Dump', 'axton1', TYPE_DUMP),
-            MODE_DUMP_AXTON_SKIFF2: ('Axton + Skiff 2 Dump', 'axton2', TYPE_DUMP),
-            MODE_DUMP_MAYA_FAN1: ('Maya + Fan 1 Dump', 'maya1', TYPE_DUMP),
-            MODE_DUMP_MAYA_FAN2: ('Maya + Fan 2 Dump', 'maya2', TYPE_DUMP),
+            MODE_DUMP: ('Maps Dump (w/ char+vehicle)', None, TYPE_DUMP),
+            MODE_DUMP_WITHOUT_CHAR: ('Maps Dump', None, TYPE_DUMP),
+            MODE_DUMP_AXTON_SKIFF1: ('Axton + Rocket/Harpoon Skiff Dump', 'axton1', TYPE_DUMP),
+            MODE_DUMP_AXTON_SKIFF2: ('Axton + Sawblade Skiff Dump', 'axton2', TYPE_DUMP),
+            MODE_DUMP_MAYA_FAN1: ('Maya + Corrosive/Flame Fan Dump', 'maya1', TYPE_DUMP),
+            MODE_DUMP_MAYA_FAN2: ('Maya + Shock Fan Dump', 'maya2', TYPE_DUMP),
             MODE_DUMP_GAIGE_BTECH: ('Gaige + BTech Dump', 'gaige1', TYPE_DUMP),
             MODE_DUMP_GAIGE_RUNNER: ('Gaige + Runner Dump', 'gaige2', TYPE_DUMP),
             MODE_DUMP_ZERO: ('Zer0 Dump', 'zero', TYPE_DUMP),
             MODE_DUMP_KRIEG: ('Krieg Dump', 'krieg', TYPE_DUMP),
+            MODE_MAKEUP: ('Makeup Dumps', None, TYPE_DUMP),
             MODE_RANDOM_MAPS: ('Random Maps', None, None),
             # Additional TPS modes
             MODE_CLAPTRAP_BUGGY: ('Claptrap + Buggy Getall', 'claptrap', TYPE_GETALL),
@@ -366,9 +371,42 @@ class DataDumper(SDKMod):
 
                 do_char_vehicle = (self.cur_mode == self.MODE_FWD)
 
+                # Okay, testing: it seems that *maybe* there are some objects which, once
+                # you've been inside a particular level, get marked as permanent keepalive.
+                # Which could maybe be part of my variably-existing object problem?  Anyway,
+                # trying for a longshot here and opening up *every* level first.  Laaame.
+                #
+                # This did seem to take care of the objects I was hoping it would cover, but
+                # then it *didn't* cover some others.  Overall it was actually a bit better
+                # than *not* doing it, but it also uncovered a few objects which end up
+                # incrementing their number suffix if you go through the same level more
+                # than once.  In the end, I think it's probably better to *not* do this, and
+                # just cope with the other manual fixes, even though the output is slightly
+                # worse.  I think users could get confused by those incremented-number objects,
+                # which are probably Good Enough for most modding applications, even if the
+                # number suffix turns out to not be entirely stable.
+                #
+                #for level in dumperdata.level_list[self.game]:
+                #    self.add_open_level(level, False)
+
+                # *However*, I've been testing out the "fancier" method of map switching,
+                # which seems to be working better than `open`, actually.  *That* method,
+                # though, has various *issues* with changing to the map you're already in.
+                # It even seems to have some problems if you change *back*, after swapping
+                # out, though that could potentially be due to some timing issues on my
+                # part.  Anyway, let's find out what level we're in, and if we're *already*
+                # in the starting level, don't trigger any level-change.
+                cur_level = self.get_current_level_name()
+
                 # Loop through levels, then do chars/vehicles, then main menu, then quit!
-                for level in dumperdata.level_list[self.game]:
-                    self.add_open_level(level)
+                for idx, level in enumerate(dumperdata.level_list[self.game]):
+                    # Here's where we skip the level load if it's the *initial* level and
+                    # we're already in the right level.
+                    if idx == 0 and level == cur_level:
+                        # Make sure to add in our level-change indicator, though
+                        self.add_switch_to(level)
+                    else:
+                        self.add_open_level(level)
                     self.add_getall()
                 if do_char_vehicle:
                     self.add_chars_vehicles()
@@ -387,16 +425,33 @@ class DataDumper(SDKMod):
 
                 do_char_vehicle = (self.cur_mode == self.MODE_REV)
 
-                # Lead off with a couple of random map loads, to further mix things up
-                self.add_user_feedback('Loading random map 1/2...')
-                self.add_open_level(random.choice(dumperdata.level_list[self.game]), do_switch_to=False)
-                self.add_user_feedback('Loading random map 2/2...')
-                self.add_open_level(random.choice(dumperdata.level_list[self.game]), do_switch_to=False)
+                # Ditto above, re: testing...
+                #for level in reversed(dumperdata.level_list[self.game]):
+                #    self.add_open_level(level, False)
+
+                # Lead off with a couple of random map loads, to further mix things up.
+                # Omit the first and last levels, since we're likely to already be on
+                # one of those.
+                # Update 2023: actually, let's not.  We're already plenty mixed by this
+                # point, and I don't want to risk map-change issues like I mentioned above.
+                #num_randoms = 2
+                #randoms = random.sample(dumperdata.level_list[self.game][1:-1], num_randoms)
+                #for idx, level_name in enumerate(randoms):
+                #    self.add_user_feedback(f'Loading random map {idx+1}/{num_randoms}...')
+                #    self.add_open_level(level_name, do_switch_to=False)
+
+                # ... but I *do* want to skip the map-switch statement if we're already in
+                # the starting map
+                cur_level = self.get_current_level_name()
 
                 # Then it's more or less just the same as FWD, but with some reversed
                 # loading orders
-                for level in reversed(dumperdata.level_list[self.game]):
-                    self.add_open_level(level)
+                for idx, level in enumerate(reversed(dumperdata.level_list[self.game])):
+                    if idx == 0 and level == cur_level:
+                        # Make sure to add in our level-change indicator, though
+                        self.add_switch_to(level)
+                    else:
+                        self.add_open_level(level)
                     self.add_getall()
                 if do_char_vehicle:
                     self.add_chars_vehicles(reverse=True)
@@ -411,22 +466,38 @@ class DataDumper(SDKMod):
                         self.mode_rev_key,
                         ))
 
-            elif self.cur_mode == self.MODE_DUMP or self.cur_mode == self.MODE_DUMP_WITHOUT_CHAR:
+            elif self.cur_mode == self.MODE_DUMP or self.cur_mode == self.MODE_DUMP_WITHOUT_CHAR or self.cur_mode == self.MODE_MAKEUP:
 
                 do_char_vehicle = (self.cur_mode == self.MODE_DUMP)
 
                 # May as well grab defaults first
-                self.add_dumps('defaults')
+                if self.cur_mode != self.MODE_MAKEUP:
+                    self.add_dumps('defaults')
+
+                # Ditto above, re: testing
+                #for level in dumperdata.level_list[self.game]:
+                #    self.add_open_level(level, False)
+
+                # Ditto above, re: guarding our initial-map-load
+                cur_level = self.get_current_level_name()
 
                 # Loop through levels, then do chars/vehicles, then main menu, then quit!
+                idx = 0
                 for level in dumperdata.level_list[self.game]:
-                    self.add_open_level(level)
-                    self.add_dumps(level)
+                    if level in self.objdump_files:
+                        if idx == 0 and level == cur_level:
+                            # Make sure to add in our level-change indicator, though
+                            self.add_switch_to(level)
+                        else:
+                            self.add_open_level(level)
+                        self.add_dumps(level)
+                        idx += 1
                 if do_char_vehicle:
                     self.add_chars_vehicles()
                     self.add_dumps('charvehicle')
                 self.add_main_menu()
-                self.add_dumps('mainmenu')
+                if 'mainmenu' in self.objdump_files:
+                    self.add_dumps('mainmenu')
                 if do_char_vehicle:
                     self.add_exit()
                 else:
@@ -440,9 +511,15 @@ class DataDumper(SDKMod):
                 # Go to a few random maps, just to mix things up and increment
                 # some dynamically-named object suffixes.
                 map_count = 3
-                for i in range(map_count):
-                    self.add_user_feedback('Loading random map {}/{}...'.format(i+1, map_count))
-                    self.add_open_level(random.choice(dumperdata.level_list[self.game]), do_switch_to=False)
+                cur_level = self.get_current_level_name()
+                level_set = set(dumperdata.level_list[self.game])
+                level_set.discard(cur_level)
+                # I think Python3.11 requires that the collection be a sequence, so passing
+                # in a set here wouldn't work, hence converting it back to a list
+                rando_maps = random.sample(list(level_set), map_count)
+                for idx, rando_map in enumerate(rando_maps):
+                    self.add_user_feedback('Loading random map {}/{}...'.format(idx+1, map_count))
+                    self.add_open_level(rando_map, do_switch_to=False)
 
             else:
 
@@ -463,6 +540,12 @@ class DataDumper(SDKMod):
                 self.mode_rev_key,
                 ))
 
+            # Debug output
+            if False:
+                unrealsdk.Log('{} command(s) to execute:'.format(len(self.command_list)))
+                for idx, (command, delay) in enumerate(self.command_list):
+                    unrealsdk.Log(f'{idx+1}. {command} @ {delay}')
+
     def add_switch_to(self, label):
         """
         Adds a dummy little `obj dump` statement which will be useful for parsing
@@ -474,6 +557,14 @@ class DataDumper(SDKMod):
         """
         Adds a command to load a new level
         """
+
+        # Testing: switch to the main menu first and wait a sec.  I'm hoping this might take
+        # care of some situations where objects are being reported in maps they shouldn't
+        # be in.  (Spoiler: it does not!  So don't bother.)
+        #self.command_list.append((self.mainmenu_magic, None))
+
+        # Now switch to the new map (adding in our "switch.to.levelname" logfile notifier
+        # if requested)
         if do_switch_to:
             self.add_switch_to(levelname)
         self.command_list.append(('open {}'.format(levelname), self.map_change_delay))
@@ -682,5 +773,18 @@ class DataDumper(SDKMod):
             self.cycleMode(backwards=True)
         elif input_obj.Name == self.cancel_input_name:
             self.cancelCycle()
+
+    def get_current_level_name(self):
+        """
+        Returns our current level name, if possible, or None.  (If it's None,
+        it's almost certainly the main menu.)
+        """
+        wi = unrealsdk.GetEngine().GetCurrentWorldInfo()
+        cpl = wi.CommittedPersistentLevel
+        if cpl:
+            return cpl.PathName(cpl).split('.')[0]
+        else:
+            # Probably the main menu
+            return None
 
 RegisterMod(DataDumper())

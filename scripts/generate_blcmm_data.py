@@ -10,7 +10,7 @@
 # as published by the Free Software Foundation, either version 3 of
 # the License, or (at your option) any later version.
 #
-# Borderlands ModCabinet Sorter is distributed in the hope that it will
+# Borderlands DataDumper is distributed in the hope that it will
 # be useful, but WITHOUT ANY WARRANTY; without even the implied
 # warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 # See the GNU General Public License for more details.
@@ -28,11 +28,6 @@ import zipfile
 import hashlib
 import argparse
 import datetime
-
-# NOTE: this is still a work-in-progress which generates data for OpenBLCMM,
-# a forthcoming opensource version of BLCMM which has not yet been officially
-# released.  The fork lives at https://github.com/BLCM/blcmm -- at time of
-# writing, just in the `apoc` fork.
 
 # When the BLCMM core was opensourced in 2022, we needed to reimplement the
 # Data Library components if we wanted a fully-opensource BLCMM, since those
@@ -56,11 +51,11 @@ import datetime
 # a tree -- there may not be an object dump attached.  But the whole parent/child
 # structure lets us put in the dump info where it's applicable.
 #
-# The app expects to have a `completed` directory that was populated via
+# The app expects to have a `categorized` directory that was populated via
 # `categorize_data.py`, so this has to be run at the tail end of the data
 # extraction process.  You could alternatively just grab the data extracts
 # provided with FT Explorer (https://github.com/apocalyptech/ft-explorer).  That's
-# basically just the raw `completed` dir.
+# basically just the raw `categorized` dir.
 #
 # While processing, in addition to creating the sqlite database, this'll
 # copy/store the dumps into a new directory with a different format.  For the
@@ -88,7 +83,7 @@ import datetime
 # As mentioned elsewhere below, the denormalization does come at a cost: database size.
 # At time of writing, the uncompressed "base" database (classes, class aggregation,
 # and objects) clocks in at about 350MB.  Adding in the "shown class IDs" table (see
-# below for details on that - it's what lets the lower-left-hand Object Explorer
+# below for details on that - it's what lets the lower-left-hand Object Browser
 # window be nice and quick) adds in another 230MB or so.
 #
 # ====================================================================
@@ -2158,6 +2153,9 @@ class UEClass:
         self.num_datafiles = 0
         self.attr_names = set()
 
+    def __repr__(self):
+        return f'UEClass<{self.name}>'
+
     def __lt__(self, other):
         # BLCMM's historically sorted *with* case sensitivity, but nuts to that.  I've long
         # since come to terms with case-insensitive sorting.  :)  Swap these around to
@@ -2611,16 +2609,26 @@ def get_class_registry(categorized_dir, cat_reg):
 
     cr = ClassRegistry()
     for filename in sorted(os.listdir(categorized_dir)):
-        if not filename.endswith('.dump.xz'):
+        if filename.endswith('.dump'):
+            extlen = 5
+        elif filename.endswith('.dump.xz'):
+            extlen = 8
+        else:
             continue
-        class_obj = cr.get_or_add(filename[:-8], cat_reg)
-        with lzma.open(os.path.join(categorized_dir, filename), 'rt', encoding='latin1') as df:
-            for line in df:
-                if line.startswith('  ObjectArchetype='):
-                    parent_name = cr.get_or_add(line.split('=', 1)[1].split("'", 1)[0], cat_reg)
-                    if parent_name is not None:
-                        class_obj.set_parent(parent_name)
-                    break
+
+        class_obj = cr.get_or_add(filename[:-extlen], cat_reg)
+        full_filename = os.path.join(categorized_dir, filename)
+        if filename.endswith('.dump'):
+            df = open(full_filename, 'rt', encoding='latin1')
+        else:
+            df = lzma.open(full_filename, 'rt', encoding='latin1')
+        for line in df:
+            if line.startswith('  ObjectArchetype='):
+                parent_name = cr.get_or_add(line.split('=', 1)[1].split("'", 1)[0], cat_reg)
+                if parent_name is not None:
+                    class_obj.set_parent(parent_name)
+                break
+        df.close()
 
     return cr
 
@@ -2635,66 +2643,77 @@ def get_object_registry(dest_dir, args, cr, quick):
     obj_reg = ObjectRegistry()
     seen_array_limit_warning = False
     for filename in sorted(os.listdir(args.categorized_dir)):
-        if not filename.endswith('.dump.xz'):
+        if filename.endswith('.dump'):
+            extlen = 5
+        elif filename.endswith('.dump.xz'):
+            extlen = 8
+        else:
             continue
-        class_obj = cr[filename[:-8]]
-        with lzma.open(os.path.join(args.categorized_dir, filename), 'rt', encoding='latin1') as df:
-            pos = 0
-            cur_index = 1
-            odf = None
-            new_obj = None
-            inner_class = None
-            for line in df:
-                to_write = line.lstrip()
-                if line.startswith('*** Property dump for object'):
-                    if new_obj is not None:
-                        new_obj.bytes = pos-new_obj.file_position
-                    obj_name = line.split("'")[1].split(' ')[-1]
-                    new_obj = obj_reg.get_or_add(obj_name, class_obj, cur_index, pos)
-                    if odf is None or pos >= max_bytes:
-                        if odf is not None:
-                            odf.close()
-                            cur_index += 1
-                        if args.verbose:
-                            print("\r > {:70}".format(
-                                f'{class_obj.name}.dump.{cur_index}'), end='')
-                        odf = open(os.path.join(dest_dir, f'{class_obj.name}.dump.{cur_index}'), 'wt', encoding='latin1')
-                        pos = 0
-                        class_obj.num_datafiles += 1
-                elif line.startswith('=== '):
-                    parts = line.split(' ', 3)
-                    if len(parts) == 4 and parts[2] == 'properties':
-                        if parts[1] == 'Native':
-                            # These show up in the dumps but that's not a class, and they're not
-                            # formatted like everything else.  Make sure we don't try to do
-                            # anything with those.
-                            inner_class = None
-                        else:
-                            inner_class = cr[parts[1]]
-                elif inner_class is not None and line.startswith('  '):
-                    # If dumps have been taken without the array limit fix in place, they may
-                    # have lines like `  ... 1 more elements`.  This prevents us from trying
-                    # to read those.
-                    if line.startswith('  ...'):
-                        if not seen_array_limit_warning:
-                            print("\r ! {:70}".format('WARNING: Dumps were not generated with array-limit hexedit!'))
-                            seen_array_limit_warning = True
+
+        class_obj = cr[filename[:-extlen]]
+        filename_full = os.path.join(args.categorized_dir, filename)
+        if filename.endswith('.dump'):
+            df = open(filename_full, 'rt', encoding='latin1')
+        else:
+            df = lzma.open(filename_full, 'rt', encoding='latin1')
+
+        pos = 0
+        cur_index = 1
+        odf = None
+        new_obj = None
+        inner_class = None
+        for line in df:
+            to_write = line.lstrip()
+            if line.startswith('*** Property dump for object'):
+                if new_obj is not None:
+                    new_obj.bytes = pos-new_obj.file_position
+                obj_name = line.split("'")[1].split(' ')[-1]
+                new_obj = obj_reg.get_or_add(obj_name, class_obj, cur_index, pos)
+                if odf is None or pos >= max_bytes:
+                    if odf is not None:
+                        odf.close()
+                        cur_index += 1
+                    if args.verbose:
+                        print("\r > {:70}".format(
+                            f'{class_obj.name}.dump.{cur_index}'), end='')
+                    odf = open(os.path.join(dest_dir, f'{class_obj.name}.dump.{cur_index}'), 'wt', encoding='latin1')
+                    pos = 0
+                    class_obj.num_datafiles += 1
+            elif line.startswith('=== '):
+                parts = line.split(' ', 3)
+                if len(parts) == 4 and parts[2] == 'properties':
+                    if parts[1] == 'Native':
+                        # These show up in the dumps but that's not a class, and they're not
+                        # formatted like everything else.  Make sure we don't try to do
+                        # anything with those.
+                        inner_class = None
                     else:
-                        attr_name = line[2:line.index('=')]
-                        if '(' in attr_name:
-                            attr_name = attr_name[:attr_name.index('(')]
-                    inner_class.add_attr(attr_name)
-                elif to_write == '':
-                    # If we're a blank line, make sure to write it out (this isn't actually
-                    # important programmatically -- BLCMM/OE doesn't care if there's a newline
-                    # at the end.  I like having them there when I look at the dumps manually
-                    # to confirm stuff, though)
-                    to_write = line
-                odf.write(to_write)
-                pos = odf.tell()
-            if new_obj is not None:
-                new_obj.bytes = odf.tell()-new_obj.file_position
-            odf.close()
+                        inner_class = cr[parts[1]]
+            elif inner_class is not None and line.startswith('  '):
+                # If dumps have been taken without the array limit fix in place, they may
+                # have lines like `  ... 1 more elements`.  This prevents us from trying
+                # to read those.
+                if line.startswith('  ...'):
+                    if not seen_array_limit_warning:
+                        print("\r ! {:70}".format('WARNING: Dumps were not generated with array-limit hexedit!'))
+                        seen_array_limit_warning = True
+                else:
+                    attr_name = line[2:line.index('=')]
+                    if '(' in attr_name:
+                        attr_name = attr_name[:attr_name.index('(')]
+                inner_class.add_attr(attr_name)
+            elif to_write == '':
+                # If we're a blank line, make sure to write it out (this isn't actually
+                # important programmatically -- BLCMM/OE doesn't care if there's a newline
+                # at the end.  I like having them there when I look at the dumps manually
+                # to confirm stuff, though)
+                to_write = line
+            odf.write(to_write)
+            pos = odf.tell()
+        if new_obj is not None:
+            new_obj.bytes = odf.tell()-new_obj.file_position
+        odf.close()
+
         # Break here to only process the first of the dump files
         if args.quick:
             break
@@ -2849,14 +2868,14 @@ def main():
 
     parser.add_argument('-d', '--dump-version',
             type=str,
-            default='2023.04.03.01',
-            help="Dump Version Number",
+            required=True,
+            help="Dump Version Number (such as 2023.04.14.01)",
             )
 
     parser.add_argument('-g', '--game-name',
             type=str,
             required=True,
-            choices=['bl2', 'tps'],
+            choices=['bl2', 'tps', 'aodk'],
             help="The game we're generating data for",
             )
 
