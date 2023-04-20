@@ -346,13 +346,13 @@ the scripts, even if you're running on Linux.
     2. This step will also use the contents of `scrub.txt` to automatically scrub
        data from the dumps.  See below for some known locations of information you
        might want to remove, or where to find some of the info if you're not sure
-       what it is (like your Steam ID or support token, etc).
+       what it is (like your Steam ID or Shift support token, etc).
     3. This utility will also recommend manually clearing the `Scrollback` attribute
        from an object which holds console scrollback info.  Do so manually, if you
        want.
 8. If you want, run `compare_blcmm_data.py` to compare the categorized dataset against
    the dumps provided by the original vanilla BLCMM data.  This will generate a
-   `comparisons` directory which you can browse through, and see if anything in there
+   `comparisons_blcmm` directory which you can browse through, and see if anything in there
    merits manual dumping.  Note that there are various CLI args to this util which can
    filter out various objects which are likely to be "noise" in the results.  You'll
    probably want to run it with `-c`/`--clean` to turn on all of these.
@@ -361,11 +361,21 @@ the scripts, even if you're running on Linux.
        such as describe above in the `check_undumped.py` section.
     2. Once you've exited the game, concatenate the new `Launch.log` to the end of
        your `Launch.log-data_dumps` file, and re-run `categorize_data.py`
-9. Copy `resources/enums.dat` into the same directory as the scripts you've been
-   running, and then run `generate_blcmm_data.py` - this will generate OE-compatible
-   files inside the directory `generated_blcmm_data`.  Note that the current version
-   of this script generates data for OpenBLCMM, the newer 2023 version, *not*
-   the BLCMM version that's been in-use for awhile now.
+9. If you want, run `compare_openblcmm_data.py` to compare the categorized dataset against
+   previous dumps prepared for OpenBLCMM.  Data for OpenBLCMM has basically always been
+   generated with these tools, so the results should hopefully be pretty similar.  This
+   utility supports the same options to decrease noise, and you probably want to be using
+   the `-c`/`--clean` option to get the cleanest comparison possible.
+    1. As before, if you do have objects you want to manually dump, hop into the game
+       and do so.  You can make use of the `Makeup Dumps` mode, if you want to use
+       control files such as describe above in the `check_undumped.py` section.
+    2. Once you've exited the game, concatenate the new `Launch.log` to the end of
+       your `Launch.log-data_dumps` file, and re-run `categorize_data.py`
+10. Copy `resources/enums.dat` into the same directory as the scripts you've been
+    running, and then run `generate_blcmm_data.py` - this will generate OE-compatible
+    files inside the directory `generated_blcmm_data`.  Note that the current version
+    of this script generates data for OpenBLCMM, the newer 2023 version, *not*
+    the BLCMM version that's been in-use for awhile now.
 
 Filtering/Scrubbing Sensitive Data
 ----------------------------------
@@ -373,7 +383,7 @@ Filtering/Scrubbing Sensitive Data
 The `categorize_data.py` script will attempt to scrub sensitive data for you,
 as it's looping through the dumps, based on the contents of a `scrub.txt` file
 which you can provide yourself.  As mentioned above, you probably want to be
-scrubbing your steam username/userid/support-token, and possibly your box's
+scrubbing your steam username/userid, Shift support-token, and possibly your box's
 local hostname.  For users on Epic/EGS, there's probably some similar things
 to filter out.
 
@@ -387,28 +397,6 @@ looking mostly like the list below.  The process will replace the given strings
 with `<hidden>`, so you can search the resulting dump files for that string
 to see what might've been replaced.
 
-Here are the locations of sensitive information that I've found thus far, across
-all of BL2/TPS/AoDK.  Some may only exist for one or two of the three games.
-Also, some of these don't seem to exist at all, anymore -- there have been various
-changes to how the game handles its interaction with storefronts since this list
-was first compiled.  There could very well be other objects with other information
-in existence that haven't been found by myself, too.
-
-- Your hostname (just the local component, and in all uppercase) can be found in:
-  - `WorldInfo'Loader.TheWorld:PersistentLevel.WorldInfo_1'`
-- Your Steam username can be found in:
-  - `WillowPlayerReplicationInfo'Loader.TheWorld:PersistentLevel.WillowPlayerReplicationInfo_44'` *(bl2 only)*
-  - `OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'`
-  - `UIDataStore_OnlinePlayerData'Transient.DataStoreClient_0:UIDataStore_OnlinePlayerData_42'` *(bl2 only)*
-  - `WillowGameViewportClient'Transient.WillowGameEngine_0:WillowGameViewportClient_0'`
-  - `WillowOnlineGameSettings'Transient.WillowOnlineGameSettings_0'`
-- Your 17-digit Steam user ID can be found in:
-  - `GearboxAccountData'Transient.GearboxAccountData_1'`
-  - `OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'`
-  - `WillowSaveGameManager'Transient.WillowSaveGameManager_0'` *(tps only)*
-- Your console history can be found in:
-  - `WillowConsole'Transient.WillowGameEngine_0:WillowGameViewportClient_0.WillowConsole_0'`
-
 The other thing to look out for, which `categorize_data.py` takes care of as well,
 is that there are various instances in the data which output a `ShiftId` attribute,
 which encodes your (and possibly your friends') Shift ID, as an array of sixteen
@@ -416,18 +404,37 @@ bytes.  You can search the dumps for `ShiftId` to take a look at that if you wan
 `categorize_data.py` script automatically replaces the data in every instance of this
 with zeroes, so no Shift IDs should be leaked in the data.
 
-*(some other objects to look into, will get this merged up above once I'm through with
-my current OpenBLCMM-related dumping)*
+Here are the locations of sensitive information that I've found thus far, across
+all of BL2/TPS/AoDK.  Some may only exist for one or two of the three games.
+Also, some of these don't seem to exist at all, anymore -- there have been various
+changes to how the game handles its interaction with storefronts since this list
+was first compiled.  There could very well be other objects with other information
+in existence that haven't been found by myself, too.
 
-- Scrubbed info from WorldInfo'Loader.TheWorld:PersistentLevel.WorldInfo_1'
-- Scrubbed info from GearboxAccountData'Transient.GearboxAccountData_1'
-- Scrubbed info from OnlineRecentPlayersList'Transient.OnlineRecentPlayersList_0'
-- Scrubbed info from OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'
-- Scrubbed info from WillowGameEngine'Transient.WillowGameEngine_0'
-- Scrubbed info from WillowGameViewportClient'Transient.WillowGameEngine_0:WillowGameViewportClient_0'
-- Scrubbed info from WillowConsole'Transient.WillowGameEngine_0:WillowGameViewportClient_0.WillowConsole_0'
-- Scrubbed info from WillowOnlineGameSettings'Transient.WillowOnlineGameSettings_0'
-- Scrubbed info from WorldInfo'menumap.TheWorld:PersistentLevel.WorldInfo_0'
+- Your hostname (just the local component, and in all uppercase) might be found in:
+  - `WorldInfo'Loader.TheWorld:PersistentLevel.WorldInfo_1'`
+  - `WorldInfo'menumap.TheWorld:PersistentLevel.WorldInfo_0'`
+- Your Steam username might be found in:
+  - `OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'`
+  - `WillowGameEngine'Transient.WillowGameEngine_0'`
+  - `WillowGameViewportClient'Transient.WillowGameEngine_0:WillowGameViewportClient_0'`
+  - `WillowOnlineGameSettings'Transient.WillowOnlineGameSettings_0'`
+
+  - `WillowPlayerReplicationInfo'Loader.TheWorld:PersistentLevel.WillowPlayerReplicationInfo_44'`
+  - `UIDataStore_OnlinePlayerData'Transient.DataStoreClient_0:UIDataStore_OnlinePlayerData_42'`
+- Your 17-digit Steam user ID might be found in:
+  - `OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'`
+
+  - `GearboxAccountData'Transient.GearboxAccountData_1'`
+  - `WillowSaveGameManager'Transient.WillowSaveGameManager_0'`
+- Your Shift/Gearbox support token might be found in:
+  - `GearboxAccountData'Transient.GearboxAccountData_1'`
+- Your console history (which may contain any of the above) might be found in:
+  - `WillowConsole'Transient.WillowGameEngine_0:WillowGameViewportClient_0.WillowConsole_0'`
+- `ShiftId` byte-array representations might be found in:
+  - `OnlineRecentPlayersList'Transient.OnlineRecentPlayersList_0'`
+  - `OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'`
+  - `WillowOnlineGameSettings'Transient.WillowOnlineGameSettings_0'`
 
 What's Happening Behind-The-Scenes
 ----------------------------------
