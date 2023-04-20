@@ -60,7 +60,7 @@ if args.clean:
     args.ignoreloader = True
     args.ignorewillow = True
 
-output_dir = 'comparisons'
+output_dir = 'comparisons_blcmm'
 data_dir = 'categorized'
 game = args.game_name.upper()
 stock_files_dir = f'/home/pez/.local/share/BLCMM/data/{game}'
@@ -126,7 +126,7 @@ for filename in os.listdir(stock_files_dir):
                                     continue
                                 if args.ignoredefault and '.default__' in obj_name_lower:
                                     continue
-                                if args.ignoreloader and obj_name_lower.startswith('loader.theworld.'):
+                                if args.ignoreloader and obj_name_lower.startswith('loader.theworld:'):
                                     continue
                                 if args.ignorewillow and obj_name_lower.rsplit('.', 1)[-1].startswith('willow'):
                                     continue

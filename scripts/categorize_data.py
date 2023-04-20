@@ -71,8 +71,7 @@ with open('scrub.txt') as df:
         scrub = line.strip()
         scrubs.add(scrub)
         print(f' - {scrub}')
-if len(scrubs) == 0:
-    print('  (nothing)')
+print(' - `ShiftId` byte-array representations')
 print('')
 scrubbed = set()
 
