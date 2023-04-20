@@ -410,15 +410,18 @@ bytes.  You can search the dumps for `ShiftId` to take a look at that if you wan
 `categorize_data.py` script automatically replaces the data in every instance of this
 with zeroes, so no Shift IDs should be leaked in the data.
 
-Scrubbed info from WorldInfo'Loader.TheWorld:PersistentLevel.WorldInfo_1'
-Scrubbed info from GearboxAccountData'Transient.GearboxAccountData_1'
-Scrubbed info from OnlineRecentPlayersList'Transient.OnlineRecentPlayersList_0'
-Scrubbed info from OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'
-Scrubbed info from WillowGameEngine'Transient.WillowGameEngine_0'
-Scrubbed info from WillowGameViewportClient'Transient.WillowGameEngine_0:WillowGameViewportClient_0'
-Scrubbed info from WillowConsole'Transient.WillowGameEngine_0:WillowGameViewportClient_0.WillowConsole_0'
-Scrubbed info from WillowOnlineGameSettings'Transient.WillowOnlineGameSettings_0'
-Scrubbed info from WorldInfo'menumap.TheWorld:PersistentLevel.WorldInfo_0'
+*(some other objects to look into, will get this merged up above once I'm through with
+my current OpenBLCMM-related dumping)*
+
+- Scrubbed info from WorldInfo'Loader.TheWorld:PersistentLevel.WorldInfo_1'
+- Scrubbed info from GearboxAccountData'Transient.GearboxAccountData_1'
+- Scrubbed info from OnlineRecentPlayersList'Transient.OnlineRecentPlayersList_0'
+- Scrubbed info from OnlineSubsystemSteamworks'Transient.OnlineSubsystemSteamworks_0'
+- Scrubbed info from WillowGameEngine'Transient.WillowGameEngine_0'
+- Scrubbed info from WillowGameViewportClient'Transient.WillowGameEngine_0:WillowGameViewportClient_0'
+- Scrubbed info from WillowConsole'Transient.WillowGameEngine_0:WillowGameViewportClient_0.WillowConsole_0'
+- Scrubbed info from WillowOnlineGameSettings'Transient.WillowOnlineGameSettings_0'
+- Scrubbed info from WorldInfo'menumap.TheWorld:PersistentLevel.WorldInfo_0'
 
 What's Happening Behind-The-Scenes
 ----------------------------------
@@ -579,6 +582,7 @@ describe them here:
     the second set of Axton skiff dumps while still on the `axton1` mode, you
     can specify `axton1` for the section to skip the second category.
 
+License
 -------
 
 This code is licensed under the
