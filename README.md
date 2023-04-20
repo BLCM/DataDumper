@@ -81,7 +81,10 @@ will output the currently-available keybinds via in-game chat whenever you
 interact with it, and will pop up the initial message as soon as you activate
 the mod via the "Mods" menu.
 
-The keybinds were chosen based on what keys Apocalyptech had unused at the
+Interacting with the mod is done via some keybinds, though note that the keys
+are *only* available when you're actually in the game, not from the main menu.
+So be sure to "continue" with the chosen character before trying to play with
+it.  The keybinds were chosen based on what keys Apocalyptech had unused at the
 time.  At the moment, to change them, you'll have to update the mod sourcecode:
 
 Function | Keybind
@@ -121,16 +124,13 @@ a method which ends up dumping a "100% complete" set of data on its own.
 Each method I've tried seems to omit at least an object or two.  The methods
 currently active in the mod tend to give the results that I'm happiest
 with, but there seems to be no getting around having to do some manual
-cleanup after the fact.
+cleanup after the fact.  The objects which are missing seem to change
+as time goes on, in fact -- after having gone through several iterations
+of data dumping, I seem to have a different set each time.
 
-There are a couple of utilities which can be used to investigate those
-discrepancies, listed below.  There's a few which have historically
-been problematic, which I'll list here, but you'll do well to run the
-verification scripts afterwards to catch anything else which might
-need manual dumping.
-
-- Dumpable with Kreig loaded:
-  - `GD_Lilac_Skills_Hellborn.Skills.Projectile_FireBall:BehaviorProviderDefinition_0.Behavior_AttemptStatusEffect_1`
+So, to help figure out what might be missing, there are a couple of
+utilities which can be used to investigate the discrepancies.  Those are
+listed as part of the procedure, below.
 
 It's possibly worth noting that even in the worst cases, the vast majority
 of objects *do* get dumped.  There's generally only a handful of objects
@@ -357,7 +357,9 @@ the scripts, even if you're running on Linux.
    filter out various objects which are likely to be "noise" in the results.  You'll
    probably want to run it with `-c`/`--clean` to turn on all of these.
     1. If you do have objects you want to manually dump, hop into the game and do so.
-       Once you've exited the game, concatenate the new `Launch.log` to the end of
+       You can make use of the `Makeup Dumps` mode, if you want to use control files
+       such as describe above in the `check_undumped.py` section.
+    2. Once you've exited the game, concatenate the new `Launch.log` to the end of
        your `Launch.log-data_dumps` file, and re-run `categorize_data.py`
 9. Copy `resources/enums.dat` into the same directory as the scripts you've been
    running, and then run `generate_blcmm_data.py` - this will generate OE-compatible
