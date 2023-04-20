@@ -47,12 +47,6 @@ class DataDumper(SDKMod):
     mode_rev_input_name = 'Cycle Mode Backwards'
     mode_rev_key = 'P'
 
-    #Keybinds = [
-    #        (dd_input_name, dd_key),
-    #        (mode_input_name, mode_key),
-    #        (mode_rev_input_name, mode_rev_key),
-    #        (cancel_input_name, cancel_key),
-    #        ]
     Keybinds = [
             Keybind(dd_input_name, dd_key),
             Keybind(mode_input_name, mode_key),
@@ -371,37 +365,12 @@ class DataDumper(SDKMod):
 
                 do_char_vehicle = (self.cur_mode == self.MODE_FWD)
 
-                # Okay, testing: it seems that *maybe* there are some objects which, once
-                # you've been inside a particular level, get marked as permanent keepalive.
-                # Which could maybe be part of my variably-existing object problem?  Anyway,
-                # trying for a longshot here and opening up *every* level first.  Laaame.
-                #
-                # This did seem to take care of the objects I was hoping it would cover, but
-                # then it *didn't* cover some others.  Overall it was actually a bit better
-                # than *not* doing it, but it also uncovered a few objects which end up
-                # incrementing their number suffix if you go through the same level more
-                # than once.  In the end, I think it's probably better to *not* do this, and
-                # just cope with the other manual fixes, even though the output is slightly
-                # worse.  I think users could get confused by those incremented-number objects,
-                # which are probably Good Enough for most modding applications, even if the
-                # number suffix turns out to not be entirely stable.
-                #
-                #for level in dumperdata.level_list[self.game]:
-                #    self.add_open_level(level, False)
-
-                # *However*, I've been testing out the "fancier" method of map switching,
-                # which seems to be working better than `open`, actually.  *That* method,
-                # though, has various *issues* with changing to the map you're already in.
-                # It even seems to have some problems if you change *back*, after swapping
-                # out, though that could potentially be due to some timing issues on my
-                # part.  Anyway, let's find out what level we're in, and if we're *already*
-                # in the starting level, don't trigger any level-change.
+                # Don't bother changing levels if we're starting out on the starting level
+                # already
                 cur_level = self.get_current_level_name()
 
                 # Loop through levels, then do chars/vehicles, then main menu, then quit!
                 for idx, level in enumerate(dumperdata.level_list[self.game]):
-                    # Here's where we skip the level load if it's the *initial* level and
-                    # we're already in the right level.
                     if idx == 0 and level == cur_level:
                         # Make sure to add in our level-change indicator, though
                         self.add_switch_to(level)
@@ -425,23 +394,16 @@ class DataDumper(SDKMod):
 
                 do_char_vehicle = (self.cur_mode == self.MODE_REV)
 
-                # Ditto above, re: testing...
-                #for level in reversed(dumperdata.level_list[self.game]):
-                #    self.add_open_level(level, False)
-
-                # Lead off with a couple of random map loads, to further mix things up.
-                # Omit the first and last levels, since we're likely to already be on
-                # one of those.
-                # Update 2023: actually, let's not.  We're already plenty mixed by this
-                # point, and I don't want to risk map-change issues like I mentioned above.
+                # Originally was randomizing some level loads, but ended up thinking better
+                # of it. Don't bother.  :)
                 #num_randoms = 2
                 #randoms = random.sample(dumperdata.level_list[self.game][1:-1], num_randoms)
                 #for idx, level_name in enumerate(randoms):
                 #    self.add_user_feedback(f'Loading random map {idx+1}/{num_randoms}...')
                 #    self.add_open_level(level_name, do_switch_to=False)
 
-                # ... but I *do* want to skip the map-switch statement if we're already in
-                # the starting map
+                # Don't bother changing levels if we're starting out on the starting level
+                # already
                 cur_level = self.get_current_level_name()
 
                 # Then it's more or less just the same as FWD, but with some reversed
@@ -474,11 +436,8 @@ class DataDumper(SDKMod):
                 if self.cur_mode != self.MODE_MAKEUP:
                     self.add_dumps('defaults')
 
-                # Ditto above, re: testing
-                #for level in dumperdata.level_list[self.game]:
-                #    self.add_open_level(level, False)
-
-                # Ditto above, re: guarding our initial-map-load
+                # Don't bother changing levels if we're starting out on the starting level
+                # already
                 cur_level = self.get_current_level_name()
 
                 # Loop through levels, then do chars/vehicles, then main menu, then quit!
@@ -558,29 +517,15 @@ class DataDumper(SDKMod):
         Adds a command to load a new level
         """
 
-        # Testing: switch to the main menu first and wait a sec.  I'm hoping this might take
-        # care of some situations where objects are being reported in maps they shouldn't
-        # be in.  (Spoiler: it does not!  So don't bother.)
-        #self.command_list.append((self.mainmenu_magic, None))
-
         # Now switch to the new map (adding in our "switch.to.levelname" logfile notifier
         # if requested)
         if do_switch_to:
             self.add_switch_to(levelname)
         self.command_list.append(('open {}'.format(levelname), self.map_change_delay))
 
-        ###
-        ### There's one Krieg-related object which cannot get dumped when we use `open`
-        ### to change levels, because its number suffix changes.  The number suffix does
-        ### *not* change during ordinary gameplay, or if we use a fancier method of
-        ### map-loading.  The fancier method ends up missing out on a handful of *other*
-        ### objects, though, so IMO it's not worth it to use it.  Just grab that one
-        ### Krieg object after the fact.
-        ###
-
-        ## If we have a pre-recorded list of level packages to load, load the level via
-        ## API rather than `open`.  If we don't have that list, though, go ahead and use
-        ## `open` for now.
+        # Instead of using `open`, there's a fancier way of level loading which we could
+        # use.  In practice, this leaves more objects un-dumped than using `open`, though,
+        # so we're not doing it.
         #if levelname in dumperdata.level_pkgs[self.game]:
         #    self.command_list.append((self.map_magic, levelname))
         #else:
@@ -700,7 +645,11 @@ class DataDumper(SDKMod):
 
     def open_map(self, levelname):
         """
-        Loads the specified map name
+        Loads the specified map name.  Right now this uses some hardcoded
+        lists in dumperdata.py, but really we should be grabbing this info
+        dynamically from `LevelDependencyList` objects.  We're not actually
+        using this method anywhere at the moment, though, so I'm not
+        bothering to make that change.
         """
         pc = unrealsdk.GetEngine().GamePlayers[0].Actor
         maplist = dumperdata.level_pkgs[self.game][levelname]
@@ -712,7 +661,6 @@ class DataDumper(SDKMod):
                 idx == (maplist_len - 1),
                 ))
             pc.ClientPrepareMapChange(pkgname, idx == 0, idx == (maplist_len - 1))
-        #pc.ClientPrepareMapChange(levelname, True, True)
         pc.ClientCommitMapChange()
         self.setNextDelay(self.map_change_delay)
 

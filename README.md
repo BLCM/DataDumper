@@ -307,7 +307,8 @@ the scripts, even if you're running on Linux.
     1. Note first off that objects whose name have a `Willow` prefix, or with big-looking
        numeric suffixes, are likely to be dynamic objects which just didn't get caught
        by the initial round of `getall` filtering.  Many of the results in here can be
-       pretty safely ignored.
+       pretty safely ignored.  `MatineeActor` objects are likely to be not worth bothering
+       with, too.
     2. If you want to try re-dumping from these "makeup" files, move the original control
        files in the `datadumper` dir out of the way, and replace with the `makeup`
        files.  Then head back into the game and switch to the `Makeup Dumps` mode (which
@@ -323,7 +324,10 @@ the scripts, even if you're running on Linux.
        control files like `Caverns_P.1` and shuffling objects around.  You may need to
        head into an existing BLCMM Object Explorer install to run some references to
        find out where some objects are intended to be.
-    4. If you did get some fresh object dumps, concatenate the new `Launch.log` onto
+    4. Alternatively, if there's not much, you could always just dump the missing
+       objects manually in-game, of course, instead of loading up the `Makeup Dumps`
+       mode and running that.
+    5. If you did get some fresh object dumps, concatenate the new `Launch.log` onto
        the end of your `Launch.log-data_dumps` file.
 6. Create a `scrub.txt` file alongside your scripts (and the collected `Launch.log-*`
    files).  This file will contain patterns to scrub out of the data, used to hide
